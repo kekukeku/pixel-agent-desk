@@ -1,14 +1,14 @@
 # TASK-007: Watcher onboarding docs and dependency setup
 
-- **Status**: `IN_PROGRESS`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_007_watcher_onboarding_docs`
-- **PR URL**: `TBD`
-- **Linked Review**: [review_request_007.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_request_007.md)
+- **PR URL**: `N/A (local merge @ 6f7a784d)`
+- **Linked Review**: [review_007.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_007.md)
 - **Dependencies**: [TASK-006](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_006.md)
 
 ---

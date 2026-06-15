@@ -43,3 +43,11 @@ All notable changes to this project will be documented in this file.
 - Added symmetric handoff warnings and fallback payload writing for Grok Build (writing `REVIEWS/grok_handoff_NNN.json`).
 - Added Jest integration test suite `__tests__/watcher.test.js` using side-effect-free `--parse-only` mode.
 - Documented project watcher usage and configurations in `README.md`.
+
+## [2026-06-16] TASK-007: Watcher onboarding docs and dependency setup
+
+- Added a root-level `requirements.txt` containing the pinned `watchdog>=6.0.0,<7.0.0` dependency.
+- Implemented a graceful import guard in `watcher.py` for the `watchdog` package, showing a helpful install command hint and exiting with status code 1 when missing in normal monitoring mode.
+- Ensured `--parse-only` mode runs with zero side-effects and tolerates missing `watchdog` dependencies gracefully.
+- Refactored `README.md` project watcher section to use a checklist-style Quick Start guide.
+- Fully documented the Visual-Only Mode behavior, fallback payloads (`REVIEWS/task_handoff_NNN.json` and `REVIEWS/grok_handoff_NNN.json`), and their exact JSON fields/trigger conditions.
