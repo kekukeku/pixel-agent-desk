@@ -17,3 +17,10 @@ All notable changes to this project will be documented in this file.
 - Separated Claude Code CLI hooks into compatibility adapters (`claudeHookAdapter.js` and legacy wrapper `hookProcessor.js`).
 - Refactored session recovery policies to distinguish between process verification (for Claude) and source allowlist verification (for custom watchers).
 - Added comprehensive unit testing for event processor and multi-provider pricing.
+
+## [2026-06-16] TASK-003: Strengthen repository governance rules from TASK-002 retrospective
+
+- Strengthened Codex task specifications standards to require selection based on AGENT_STATE.md, precise required files vs candidates, explicit testing and documentation expectations, and external reference validity checks.
+- Added Antigravity pre-review self-check checklists inside TEAM_RULES.md and implemented them as a PR template checklist inside PR_TEMPLATE.md.
+- Added Grok Build review guidelines to separate issues into blocking, non-blocking, and optional follow-ups, and require architectural tradeoff analysis.
+- Defined a post-merge reconciliation checklist requiring alignment of task files, central registry, review files, validation master documents, and the change log.
