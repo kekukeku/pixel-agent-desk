@@ -32,3 +32,14 @@ All notable changes to this project will be documented in this file.
 - Added GitHub Actions workflows for Grok review dispatching, merge validator gating, and decision routing with job-level guards to prevent self-applied label loop triggers.
 - Updated `TEAM_RULES.md` and `REVIEWS/README.md` to document the router triggers and payload contracts.
 - Added unit tests under `__tests__/agentRunner.test.js` validating all decision routes.
+
+## [2026-06-16] TASK-006: Add Pixel Agent Desk watcher with visual status and execution handoff
+
+- Implemented `watcher.py` (Python 3) to monitor `TASKS/`, `REVIEWS/`, and `AGENT_STATE.md` using `watchdog`.
+- Supported project root overrides via `--project-root` and `PIXEL_AGENT_DESK_PROJECT_ROOT` env variables.
+- Added support for custom keep-alive intervals and configurable/customizable agent attributes (IDs, names, types) via environment variables and `~/.pixel-agent-desk/watcher.json`.
+- Implemented execution handoff POST webhooks for both Antigravity task updates and Grok review triggers.
+- Integrated `on_created` filesystem events to trigger visual updates and handoffs upon new file creation.
+- Added symmetric handoff warnings and fallback payload writing for Grok Build (writing `REVIEWS/grok_handoff_NNN.json`).
+- Added Jest integration test suite `__tests__/watcher.test.js` using side-effect-free `--parse-only` mode.
+- Documented project watcher usage and configurations in `README.md`.

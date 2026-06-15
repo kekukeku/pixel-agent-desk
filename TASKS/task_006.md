@@ -1,14 +1,14 @@
 # TASK-006: Add Pixel Agent Desk watcher with visual status and execution handoff
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_006_pixel_agent_desk_watcher`
-- **PR URL**: `TBD`
-- **Linked Review**: `TBD`
+- **PR URL**: `N/A (local merge @ 1583203)`
+- **Linked Review**: [review_006.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_006.md)
 - **Dependencies**: [TASK-004](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_004.md)
 
 ---
