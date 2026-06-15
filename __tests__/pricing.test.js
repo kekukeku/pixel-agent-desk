@@ -70,7 +70,7 @@ describe('Model Pricing Registry', () => {
   });
 
   describe('calculateTokenCost', () => {
-    test('calculates correct cost for input, output and cached tokens', () => {
+    test('calculates correct cost for OpenAI (gpt-4o)', () => {
       // Test with gpt-4o: input = 2.50/M, cached = 1.25/M, output = 10.00/M
       const cost = calculateTokenCost({
         input: 100000,        // 0.1M * 2.5 = 0.25
@@ -79,6 +79,50 @@ describe('Model Pricing Registry', () => {
       }, 'gpt-4o');
 
       expect(roundCost(cost)).toBe(1.00); // 0.25 + 0.25 + 0.50 = 1.00
+    });
+
+    test('calculates correct cost for Anthropic (claude-3-5-sonnet)', () => {
+      // input = 3.00/M, cached = 0.30/M, output = 15.00/M
+      const cost = calculateTokenCost({
+        input: 100000,        // 0.1M * 3 = 0.30
+        cacheRead: 100000,    // 0.1M * 0.3 = 0.03
+        output: 10000,        // 0.01M * 15 = 0.15
+      }, 'claude-3-5-sonnet');
+
+      expect(roundCost(cost)).toBe(0.48); // 0.30 + 0.03 + 0.15 = 0.48
+    });
+
+    test('calculates correct cost for Google (gemini-1.5-pro)', () => {
+      // input = 1.25/M, cached = 0.3125/M, output = 5.00/M
+      const cost = calculateTokenCost({
+        input: 100000,        // 0.1M * 1.25 = 0.125
+        cacheRead: 200000,    // 0.2M * 0.3125 = 0.0625
+        output: 50000,        // 0.05M * 5 = 0.25
+      }, 'gemini-1.5-pro');
+
+      expect(roundCost(cost)).toBe(0.4375); // 0.125 + 0.0625 + 0.25 = 0.4375
+    });
+
+    test('calculates correct cost for xAI (grok-2)', () => {
+      // input = 2.00/M, cached = 1.00/M, output = 10.00/M
+      const cost = calculateTokenCost({
+        input: 100000,        // 0.1M * 2 = 0.20
+        cacheRead: 100000,    // 0.1M * 1 = 0.10
+        output: 10000,        // 0.01M * 10 = 0.10
+      }, 'grok-beta');
+
+      expect(roundCost(cost)).toBe(0.40); // 0.20 + 0.10 + 0.10 = 0.40
+    });
+
+    test('calculates correct cost for DeepSeek (deepseek-chat)', () => {
+      // input = 0.14/M, cached = 0.014/M, output = 0.28/M
+      const cost = calculateTokenCost({
+        input: 1000000,       // 1.0M * 0.14 = 0.14
+        cacheRead: 1000000,   // 1.0M * 0.014 = 0.014
+        output: 1000000,      // 1.0M * 0.28 = 0.28
+      }, 'deepseek-chat');
+
+      expect(roundCost(cost)).toBe(0.434); // 0.14 + 0.014 + 0.28 = 0.434
     });
   });
 

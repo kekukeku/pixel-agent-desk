@@ -7,7 +7,7 @@
 
 const path = require('path');
 const { normalizeAgentEvent } = require('./adapters/normalizedAgentAdapter');
-const { resolveModelPricing, calculateTokenCost, getContextWindowSize, roundCost } = require('../pricing');
+const { calculateTokenCost, getContextWindowSize, roundCost } = require('../pricing');
 
 let agentManager = null;
 let sessionPids = null;
