@@ -9,6 +9,7 @@ For each task `TASK-NNN` managed by the autonomous workflow, the following files
 - `review_diff_NNN.patch`: The physical diff file representing the proposed changes.
 - `review_NNN.md`: The formal review outcome authored by Grok Build (Layer 2).
 - `validation_master_NNN.md` / `grok_payload_NNN.json`: Supporting payloads and automated validation summaries.
+- `handoff_payload_NNN.json`: Review Decision Router output describing the parsed decision, target state, labels, PR comment body, and optional webhook payload.
 
 ---
 
@@ -52,3 +53,17 @@ Grok Build must format `review_NNN.md` strictly according to the following layou
 - **`APPROVE`**: The changes meet all acceptance criteria, contain no blocking issues, pass all checks, and the merge gate is unlocked.
 - **`REQUEST_CHANGES`**: One or more blocking issues were found. The check fails, and the branch cannot be merged until these are fixed.
 - **`REJECT`**: The changes are fundamentally incorrect or violate repository core rules. The PR is closed and marked dead.
+
+---
+
+## 3. Decision Router Contract
+
+`agent-runner/route-review-decision.js` consumes `review_NNN.md` and maps the decision into the next automation handoff:
+
+| Decision | Target State | Handoff Target | Labels Added |
+| :--- | :--- | :--- | :--- |
+| `APPROVE` | `APPROVED` | `antigravity.merge` | `approved-by-grok` |
+| `REQUEST_CHANGES` | `CHANGES_REQUESTED` | `antigravity.fix` | `changes-requested-by-grok`, `needs-antigravity-work` |
+| `REJECT` | `REJECTED` | `operator.review` | `rejected-by-grok`, `operator-review-required` |
+
+If the review file is not present yet, the router emits decision `NONE` and takes no label/comment action. This keeps early PR events from failing while Grok Build is still producing the decision file.
