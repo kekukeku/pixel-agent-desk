@@ -21,6 +21,7 @@ const { sessionPids, startLivenessChecker, detectClaudePidByTranscript } = requi
 const { savePersistedState, recoverExistingSessions } = require('./main/sessionPersistence');
 const { createWindowManager } = require('./main/windowManager');
 const { registerIpcHandlers } = require('./main/ipcHandlers');
+const { getAppConfig } = require('./main/config');
 
 // =====================================================
 // Save error logs to file
@@ -114,16 +115,21 @@ app.whenReady().then(() => {
   ];
   Menu.setApplicationMenu(Menu.buildFromTemplate(menuTemplate));
 
-  // 0. Auto-register Claude CLI hooks
-  registerClaudeHooks(debugLog);
+  const appConfig = getAppConfig();
+  const isClaudeEnabled = appConfig.integrations?.claude?.enabled !== false;
+
+  // 0. Auto-register Claude CLI hooks (if integration is enabled)
+  if (isClaudeEnabled) {
+    registerClaudeHooks(debugLog);
+  }
 
   // 1. Start agent manager immediately
   agentManager = new AgentManager();
   agentManager.start();
 
-  // 2. Start session scanner (scanning disabled for hook events)
+  // 2. Start session scanner (scanning enabled conditionally based on integration config)
   sessionScanner = new SessionScanner(agentManager, debugLog);
-  sessionScanner.start(60_000, false);
+  sessionScanner.start(60_000, isClaudeEnabled);
 
   // 2.5. Start heatmap scanner
   heatmapScanner = new HeatmapScanner(debugLog);
@@ -161,6 +167,7 @@ app.whenReady().then(() => {
   // 6. Start background services
   startHookServer({
     processHookEvent: hookProcessor.processHookEvent,
+    processAgentEvent: hookProcessor.processAgentEvent,
     debugLog,
     HOOK_SERVER_PORT,
     errorHandler,

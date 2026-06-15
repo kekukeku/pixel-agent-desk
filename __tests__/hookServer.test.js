@@ -43,6 +43,7 @@ function simulateRequest(handler, method, url, body = '') {
 
 describe('hookServer', () => {
   let processHookEvent;
+  let processAgentEvent;
   let debugLog;
   let errorHandler;
   let handler;
@@ -50,11 +51,13 @@ describe('hookServer', () => {
   beforeEach(() => {
     jest.clearAllMocks();
     processHookEvent = jest.fn();
+    processAgentEvent = jest.fn();
     debugLog = jest.fn();
     errorHandler = { capture: jest.fn() };
 
     startHookServer({
       processHookEvent,
+      processAgentEvent,
       debugLog,
       HOOK_SERVER_PORT: 47821,
       errorHandler,
@@ -200,6 +203,33 @@ describe('hookServer', () => {
     // Response is sent before processHookEvent is called, so it should still be 200
     // But since we're in the same event loop tick, the error propagates to the catch block
     expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+  });
+
+  describe('new generic /events/agent endpoint', () => {
+    test('processes valid agent event', () => {
+      const eventData = {
+        event: 'agent.working',
+        agent_id: 'sess-generic-123',
+        source: 'my-custom-watcher',
+        timestamp: Date.now()
+      };
+
+      const { res } = simulateRequest(handler, 'POST', '/events/agent', JSON.stringify(eventData));
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      expect(res.end).toHaveBeenCalledWith(JSON.stringify({ ok: true }));
+      expect(processAgentEvent).toHaveBeenCalledWith(eventData);
+    });
+
+    test('rejects event with missing required fields', () => {
+      simulateRequest(handler, 'POST', '/events/agent', JSON.stringify({
+        agent_id: 'sess-invalid',
+        // missing event, source, etc.
+      }));
+
+      expect(processAgentEvent).not.toHaveBeenCalled();
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Validation FAILED'));
+    });
   });
 
   test('server error handler logs errors', () => {

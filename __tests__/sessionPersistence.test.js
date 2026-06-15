@@ -98,6 +98,19 @@ describe('sessionPersistence', () => {
       firstPreToolUseDone = new Map();
     });
 
+    function mockPersistedState(savedState, extraFiles = {}) {
+      fs.existsSync.mockImplementation((filePath) => {
+        if (filePath.includes('state.json')) return true;
+        return Object.keys(extraFiles).some(name => filePath.endsWith(name));
+      });
+      fs.readFileSync.mockImplementation((filePath) => {
+        if (filePath.includes('state.json')) return JSON.stringify(savedState);
+        const match = Object.entries(extraFiles).find(([name]) => filePath.endsWith(name));
+        if (match) return match[1];
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
+    }
+
     test('recovers agents with valid PIDs', () => {
       const savedState = {
         agents: [
@@ -106,8 +119,7 @@ describe('sessionPersistence', () => {
         pids: [['agent-1', process.pid]], // current process PID (always alive)
       };
 
-      fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
+      mockPersistedState(savedState);
 
       // isClaudeProcess check
       const origPlatform = process.platform;
@@ -135,60 +147,86 @@ describe('sessionPersistence', () => {
       Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
     });
 
-    test('recovers agents without PID', () => {
+    test('skips non-watcher agents without PID', () => {
       const savedState = {
         agents: [{ id: 'agent-no-pid', state: 'Working' }],
         pids: [],
       };
 
-      fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
+      mockPersistedState(savedState);
 
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
-      expect(agentManager.updateAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'agent-no-pid', state: 'Working' }),
-        'recover'
-      );
-      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: agent-no'));
+      expect(agentManager.updateAgent).not.toHaveBeenCalled();
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Skipped stale/non-allowlisted agent: agent-no'));
     });
 
-    test('recovers agents with dead PIDs', () => {
+    test('skips agents with dead or non-Claude PIDs', () => {
       const savedState = {
         agents: [{ id: 'agent-dead', state: 'Working' }],
         pids: [['agent-dead', 99999999]], // likely dead PID
       };
 
-      fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
+      mockPersistedState(savedState);
+      execFileSync.mockImplementation(() => { throw new Error('not found'); });
 
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
-      expect(agentManager.updateAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'agent-dead', state: 'Working' }),
-        'recover'
-      );
-      expect(sessionPids.get('agent-dead')).toBe(99999999);
-      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: agent-de'));
+      expect(agentManager.updateAgent).not.toHaveBeenCalled();
+      expect(sessionPids.has('agent-dead')).toBe(false);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Skipped stale/non-allowlisted agent: agent-de'));
     });
 
-    test('recovers agents where PID is not a Claude process', () => {
+    test('skips agents where PID is not a Claude process', () => {
       const savedState = {
         agents: [{ id: 'agent-wrong', state: 'Working' }],
         pids: [['agent-wrong', process.pid]],
       };
 
-      fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
+      mockPersistedState(savedState);
+      execFileSync.mockReturnValue('/usr/bin/node /tmp/other-cli.js');
+
+      recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
+
+      expect(agentManager.updateAgent).not.toHaveBeenCalled();
+      expect(sessionPids.has('agent-wrong')).toBe(false);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Skipped stale/non-allowlisted agent: agent-wr'));
+    });
+
+    test('recovers allowlisted custom watcher agents without PID', () => {
+      const savedState = {
+        agents: [{ id: 'GA', displayName: 'A', state: 'Waiting', source: 'custom-watcher' }],
+        pids: [],
+      };
+
+      mockPersistedState(savedState, {
+        'name-map.json': JSON.stringify({ GA: 'A' }),
+      });
 
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
       expect(agentManager.updateAgent).toHaveBeenCalledWith(
-        expect.objectContaining({ sessionId: 'agent-wrong', state: 'Working' }),
+        expect.objectContaining({ sessionId: 'GA', state: 'Waiting', source: 'custom-watcher' }),
         'recover'
       );
-      expect(sessionPids.get('agent-wrong')).toBe(process.pid);
-      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: agent-wr'));
+      expect(firstPreToolUseDone.has('GA')).toBe(true);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: GA'));
+    });
+
+    test('skips custom watcher agents missing from allowlist', () => {
+      const savedState = {
+        agents: [{ id: 'stale-watcher', displayName: 'Old', state: 'Done', source: 'custom-watcher' }],
+        pids: [],
+      };
+
+      mockPersistedState(savedState, {
+        'name-map.json': JSON.stringify({ GA: 'A' }),
+      });
+
+      recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
+
+      expect(agentManager.updateAgent).not.toHaveBeenCalled();
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Skipped stale/non-allowlisted agent: stale-wa'));
     });
 
     test('handles missing state.json gracefully', () => {
@@ -201,8 +239,11 @@ describe('sessionPersistence', () => {
     });
 
     test('handles corrupted state.json with error handler', () => {
-      fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue('not-json{{{');
+      fs.existsSync.mockImplementation((filePath) => filePath.includes('state.json'));
+      fs.readFileSync.mockImplementation((filePath) => {
+        if (filePath.includes('state.json')) return 'not-json{{{';
+        throw new Error(`Unexpected read: ${filePath}`);
+      });
 
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
@@ -219,8 +260,7 @@ describe('sessionPersistence', () => {
 
     test('resets state.json after successful recovery', () => {
       const savedState = { agents: [], pids: [] };
-      fs.existsSync.mockReturnValue(true);
-      fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
+      mockPersistedState(savedState);
 
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 

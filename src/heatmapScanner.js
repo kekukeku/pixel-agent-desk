@@ -11,6 +11,7 @@ const fs = require('fs');
 const os = require('os');
 const path = require('path');
 const { roundCost, calculateTokenCost } = require('./pricing');
+const { getAppConfig } = require('./main/config');
 
 /** Retention period (days) */
 const MAX_AGE_DAYS = 400;
@@ -61,6 +62,12 @@ class HeatmapScanner {
    * Full scan — search all JSONL files under ~/.claude/projects/
    */
   async scanAll() {
+    const config = getAppConfig();
+    if (!config.integrations?.claude?.enabled) {
+      this.debugLog('[HeatmapScanner] Generic mode: Skip Claude transcript scan, history heatmap is unavailable.');
+      return;
+    }
+
     const claudeDir = path.join(os.homedir(), '.claude', 'projects');
     if (!fs.existsSync(claudeDir)) {
       this.debugLog('[HeatmapScanner] No ~/.claude/projects/ directory');

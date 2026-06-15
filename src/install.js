@@ -8,6 +8,7 @@
  */
 
 const { registerClaudeHooks } = require('./main/hookRegistration');
+const { getAppConfig } = require('./main/config');
 
 /**
  * Main entry point
@@ -16,6 +17,12 @@ function main() {
   console.log('=================================');
   console.log('Pixel Agent Desk - Install Script');
   console.log('=================================\n');
+
+  const appConfig = getAppConfig();
+  if (appConfig.integrations?.claude?.enabled === false) {
+    console.log('Claude integration is disabled in config.json. Skipping auto-registration of Claude hooks.');
+    return;
+  }
 
   const debugLog = (msg) => console.log(msg);
   const success = registerClaudeHooks(debugLog);

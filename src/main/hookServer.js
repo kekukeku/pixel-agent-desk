@@ -8,7 +8,7 @@ const Ajv = require('ajv');
 
 const MAX_BODY_SIZE = 1024 * 1024; // 1MB
 
-function startHookServer({ processHookEvent, debugLog, HOOK_SERVER_PORT, errorHandler }) {
+function startHookServer({ processHookEvent, processAgentEvent, debugLog, HOOK_SERVER_PORT, errorHandler }) {
   // JSON Schema for hook validation
   const hookSchema = {
     type: 'object',
@@ -51,11 +51,17 @@ function startHookServer({ processHookEvent, debugLog, HOOK_SERVER_PORT, errorHa
     additionalProperties: true  // Keep this since Claude may add new fields
   };
 
+  const { agentEventSchema } = require('./agentEventSchema');
+
   const ajv = new Ajv();
   const validateHook = ajv.compile(hookSchema);
+  const validateEvent = ajv.compile(agentEventSchema);
 
   const server = http.createServer((req, res) => {
-    if (req.method !== 'POST' || req.url !== '/hook') {
+    const isLegacyHook = req.method === 'POST' && req.url === '/hook';
+    const isNewEvent = req.method === 'POST' && req.url === '/events/agent';
+
+    if (!isLegacyHook && !isNewEvent) {
       res.writeHead(404); res.end(); return;
     }
 
@@ -72,16 +78,30 @@ function startHookServer({ processHookEvent, debugLog, HOOK_SERVER_PORT, errorHa
 
       try {
         const data = JSON.parse(body);
-        debugLog(`[Hook] ← ${data.hook_event_name || '?'} session=${(data.session_id || '').slice(0, 8) || '?'} _pid=${data._pid} _timestamp=${data._timestamp}`);
 
-        // Validate JSON schema
-        const isValid = validateHook(data);
-        if (!isValid) {
-          debugLog(`[Hook] Validation FAILED for ${data.hook_event_name}: ${JSON.stringify(validateHook.errors)}`);
-          return;
+        if (isLegacyHook) {
+          debugLog(`[Hook] ← ${data.hook_event_name || '?'} session=${(data.session_id || '').slice(0, 8) || '?'} _pid=${data._pid} _timestamp=${data._timestamp}`);
+
+          // Validate JSON schema
+          const isValid = validateHook(data);
+          if (!isValid) {
+            debugLog(`[Hook] Validation FAILED for ${data.hook_event_name}: ${JSON.stringify(validateHook.errors)}`);
+            return;
+          }
+
+          processHookEvent(data);
+        } else if (isNewEvent) {
+          debugLog(`[Event] ← ${data.event || '?'} agent=${(data.agent_id || data.session_id || '').slice(0, 8) || '?'} source=${data.source}`);
+
+          // Validate JSON schema
+          const isValid = validateEvent(data);
+          if (!isValid) {
+            debugLog(`[Event] Validation FAILED for ${data.event}: ${JSON.stringify(validateEvent.errors)}`);
+            return;
+          }
+
+          processAgentEvent(data);
         }
-
-        processHookEvent(data);
       } catch (e) {
         errorHandler.capture(e, {
           code: 'E010',

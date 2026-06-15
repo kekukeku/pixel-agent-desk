@@ -724,6 +724,19 @@ describe('hookProcessor', () => {
       );
     });
 
+    test('preserves source when auto-creating from first non-SessionStart event', () => {
+      processor.processHookEvent({
+        hook_event_name: 'UserPromptSubmit',
+        session_id: 'watcher-auto',
+        source: 'custom-watcher',
+      });
+
+      expect(agentManager.updateAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'watcher-auto', source: 'custom-watcher' }),
+        'http'
+      );
+    });
+
     test('does not auto-create on SessionEnd', () => {
       processor.processHookEvent({
         hook_event_name: 'SessionEnd',

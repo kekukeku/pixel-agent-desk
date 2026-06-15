@@ -59,8 +59,9 @@ npm start
 - Verify the hook server is up: `curl http://localhost:47821/hook` should return 404
 
 **Ghost avatars persist**
-- Usually a PID detection issue on Windows — clears within 30 seconds automatically
-- Restarting the app clears all state
+- Restart the watcher so future hook payloads include a stable `source`, for example `"source": "custom-watcher"`.
+- Custom watcher sessions are restored only when the persisted agent source is `custom-watcher`, `watcher`, or `external-watcher`, and the session id is allowlisted.
+- Allowlist custom watcher ids with `~/.pixel-agent-desk/watcher-allowlist.json` (`["GA", "GB"]`, `{ "sessions": ["GA", "GB"] }`, or `{ "GA": true }`). Keys in `~/.pixel-agent-desk/name-map.json` are also treated as allowlisted watcher ids.
 
 **Dashboard won't load**
 - Make sure port 3000 is free
