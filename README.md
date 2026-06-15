@@ -71,6 +71,61 @@ Example `~/.pixel-agent-desk/config.json`:
 }
 ```
 
+## Repository Watcher
+
+You can run `watcher.py` (written in Python 3) to automatically monitor this repository for task changes, review requests, and review outputs. It performs two duties:
+1. **Visual status updates**: reports activity events to the Electron app to animate Codex, Antigravity, and Grok Build characters.
+2. **Execution handoff**: runs local trigger or routing commands when tasks change.
+
+### How to Run
+
+1. **Stop any old watcher**: ensure you have terminated any old watcher scripts (like the ones from other repositories) to prevent conflicts.
+2. **Start the watcher**:
+   ```bash
+   python3 watcher.py
+   ```
+   *Optionally override the repository root path via command line argument or environment variable:*
+   ```bash
+   python3 watcher.py --project-root "/path/to/another/repo"
+   # OR
+   PIXEL_AGENT_DESK_PROJECT_ROOT="/path/to/another/repo" python3 watcher.py
+   ```
+
+### Operating Modes
+
+- **Visual-Only Mode (Default)**: If no commands or webhooks are configured for execution, the watcher still updates agent states visually. When a task changes, it writes the handoff payload to `REVIEWS/task_handoff_NNN.json` and logs a warning.
+- **Execution Handoff Mode**: You can configure commands or webhooks in `~/.pixel-agent-desk/watcher.json` to automatically trigger execution environments.
+
+### Configuration (`~/.pixel-agent-desk/watcher.json`)
+
+```json
+{
+  "antigravity": {
+    "command": "node scripts/run-executor.js {task_num}",
+    "webhook": "http://localhost:3000/webhook/antigravity"
+  },
+  "grok": {
+    "command": "node agent-runner/trigger-review.js {task_num}",
+    "webhook": null
+  },
+  "keep_alive_seconds": 60,
+  "agents": {
+    "codex": {
+      "id": "my-codex-id",
+      "name": "Custom Codex",
+      "type": "planner"
+    }
+  }
+}
+```
+
+- `keep_alive_seconds`: Interval in seconds to post periodic keep-alive `agent.idle` events (defaults to `60`).
+- `{task_num}`: Replaced automatically by the watcher with the 3-digit task number (e.g. `006`).
+- `agents`: Customize name, id, and type for `codex`, `antigravity`, and `grok-build` agents.
+- **Environment Overrides**:
+  - Keep alive interval: `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE=60`
+  - Agent attributes: `PIXEL_AGENT_DESK_AGENT_[CODEX/ANTIGRAVITY/GROK_BUILD]_[ID/NAME/TYPE]` (e.g. `PIXEL_AGENT_DESK_AGENT_CODEX_NAME="My Codex"`).
+
 ---
 
 ## Normalized Agent Event API
