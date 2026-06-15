@@ -9,8 +9,14 @@ import subprocess
 from threading import Thread
 
 # Watchdog imports
-from watchdog.observers import Observer
-from watchdog.events import FileSystemEventHandler
+try:
+    from watchdog.observers import Observer
+    from watchdog.events import FileSystemEventHandler
+    HAS_WATCHDOG = True
+except ImportError:
+    FileSystemEventHandler = object
+    Observer = object
+    HAS_WATCHDOG = False
 
 # Default Configurations
 DEFAULT_KEEP_ALIVE_SECONDS = 60
@@ -319,6 +325,12 @@ def main():
         result = perform_scan(project_root)
         print(json.dumps(result, indent=2))
         sys.exit(0)
+
+    if not HAS_WATCHDOG:
+        print("Error: The 'watchdog' package is required to run the watcher in daemon/monitoring mode.", file=sys.stderr)
+        print("Please install dependencies using:", file=sys.stderr)
+        print("    python3 -m pip install -r requirements.txt", file=sys.stderr)
+        sys.exit(1)
 
     print(f"Starting Pixel Agent Desk Watcher on: {project_root}")
     state = WatcherState(project_root)

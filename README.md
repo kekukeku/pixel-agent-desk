@@ -77,24 +77,90 @@ You can run `watcher.py` (written in Python 3) to automatically monitor this rep
 1. **Visual status updates**: reports activity events to the Electron app to animate Codex, Antigravity, and Grok Build characters.
 2. **Execution handoff**: runs local trigger or routing commands when tasks change.
 
-### How to Run
+### Quick Start
 
-1. **Stop any old watcher**: ensure you have terminated any old watcher scripts (like the ones from other repositories) to prevent conflicts.
-2. **Start the watcher**:
-   ```bash
-   python3 watcher.py
-   ```
-   *Optionally override the repository root path via command line argument or environment variable:*
-   ```bash
-   python3 watcher.py --project-root "/path/to/another/repo"
-   # OR
-   PIXEL_AGENT_DESK_PROJECT_ROOT="/path/to/another/repo" python3 watcher.py
-   ```
+To setup and run the repository watcher on a clean checkout, follow these steps:
+
+- [ ] **1. Run Pixel Agent Desk**:
+  Install Node dependencies and start the Electron application or the local web dashboard server:
+  ```bash
+  # Install dependencies
+  npm install
+
+  # Start desktop app
+  npm start
+  # OR start web dashboard server
+  npm run dashboard
+  ```
+- [ ] **2. Install Python Dependencies**:
+  Install required dependencies using the root-level `requirements.txt`:
+  ```bash
+  python3 -m pip install -r requirements.txt
+  ```
+- [ ] **3. Terminate Conflict Watchers**:
+  Ensure you have terminated any old watcher processes (e.g., from other tasks or projects) to prevent state conflicts.
+- [ ] **4. Run the Watcher**:
+  Start the watcher script at the repository root:
+  ```bash
+  python3 watcher.py
+  ```
+  *Optionally override the watched project root path using the `--project-root` argument or the `PIXEL_AGENT_DESK_PROJECT_ROOT` environment variable:*
+  ```bash
+  # CLI argument override
+  python3 watcher.py --project-root "/path/to/another/repo"
+
+  # Environment variable override
+  PIXEL_AGENT_DESK_PROJECT_ROOT="/path/to/another/repo" python3 watcher.py
+  ```
 
 ### Operating Modes
 
-- **Visual-Only Mode (Default)**: If no commands or webhooks are configured for execution, the watcher still updates agent states visually. When a task changes, it writes the handoff payload to `REVIEWS/task_handoff_NNN.json` and logs a warning.
-- **Execution Handoff Mode**: You can configure commands or webhooks in `~/.pixel-agent-desk/watcher.json` to automatically trigger execution environments.
+The watcher supports two modes of operation depending on the automation configuration:
+
+#### 1. Visual-Only Mode (Default)
+If no commands or webhooks are configured in `~/.pixel-agent-desk/watcher.json`, the watcher operates in **Visual-Only Mode**.
+It will still post character state updates to the desktop application to animate avatars, but instead of automatically executing commands or webhooks, it writes fallback handoff payload files to the `REVIEWS/` folder and logs a warning to stderr. This allows an operator to inspect the files and manually proceed.
+
+**Fallback Payload Files and Trigger Conditions:**
+
+*   **Antigravity Handoff File:** `REVIEWS/task_handoff_NNN.json` (where `NNN` is the 3-digit task number, e.g. `006`).
+    *   *Trigger Condition:* A task file under `TASKS/task_NNN.md` is modified or created with status `DRAFT` or `IN_PROGRESS`, and no command or webhook is configured for `antigravity` in `watcher.json`.
+    *   *Payload Fields:*
+        *   `task_num`: String (3-digit task number, e.g. `"006"`).
+        *   `branch`: String (branch name associated with the task, e.g. `"task/task_006_pixel_agent_desk_watcher"`).
+        *   `project_root`: String (absolute path of the watched repository).
+        *   `status`: String (`"DRAFT"` or `"IN_PROGRESS"`).
+        *   `timestamp`: Number (float epoch timestamp).
+    *   *Example JSON:*
+        ```json
+        {
+          "task_num": "006",
+          "branch": "task/task_006_pixel_agent_desk_watcher",
+          "project_root": "/Users/user/pixel-agent-desk",
+          "status": "IN_PROGRESS",
+          "timestamp": 1781584800.123
+        }
+        ```
+
+*   **Grok Build Handoff File:** `REVIEWS/grok_handoff_NNN.json`.
+    *   *Trigger Condition:* A task row's status in `AGENT_STATE.md` transitions to `UNDER_REVIEW`, and no command or webhook is configured for `grok` in `watcher.json`.
+    *   *Payload Fields:*
+        *   `task_num`: String (3-digit task number, e.g. `"006"`).
+        *   `project_root`: String (absolute path of the watched repository).
+        *   `status`: String (`"UNDER_REVIEW"`).
+        *   `timestamp`: Number (float epoch timestamp).
+    *   *Example JSON:*
+        ```json
+        {
+          "task_num": "006",
+          "project_root": "/Users/user/pixel-agent-desk",
+          "status": "UNDER_REVIEW",
+          "timestamp": 1781584800.456
+        }
+        ```
+
+#### 2. Execution Handoff Mode
+If commands or webhooks are configured for `antigravity` or `grok` in `~/.pixel-agent-desk/watcher.json`, the watcher automatically executes the command (in a subprocess shell) or issues an HTTP POST request to the webhook URL when trigger conditions are met.
 
 ### Configuration (`~/.pixel-agent-desk/watcher.json`)
 
