@@ -100,11 +100,14 @@ To automate reviews, Grok Build does not continuously poll. It relies on GitHub 
  [Run Grok Build Runner with Task Spec + Code Diff]
                    ↓
     [Output REVIEWS/review_NNN.md back to PR]
+                   ↓
+       [Review Decision Router applies handoff]
 ```
 
 - **Trigger A (Event-based)**: When a PR is `opened` or `synchronized` (new commits pushed), a GitHub Action triggers the Grok Build review runner.
 - **Trigger B (Label-based)**: Manually adding the `needs-grok-review` label to a PR triggers a re-run of the review runner.
 - **Trigger C (Local Runner)**: Antigravity can manually trigger the review process locally after opening a PR by executing `cd agent-runner && npm run trigger-review -- NNN` which automatically parses the task markdown and generates the corresponding `REVIEWS/review_request_NNN.md` file.
+- **Trigger D (Decision Router)**: When `REVIEWS/review_NNN.md` appears or changes on a PR branch, `.github/workflows/review-decision-router.yml` parses the decision and routes the next handoff through labels, PR comments, uploaded payload artifacts, and the optional `HANDOFF_ROUTER_ENDPOINT` webhook.
 
 ### GitHub Actions Implementation
 
@@ -116,6 +119,12 @@ To automate reviews, Grok Build does not continuously poll. It relies on GitHub 
   - `REVIEWS/grok_payload_NNN.json`
 - If repository secrets `GROK_REVIEW_ENDPOINT` and optional `GROK_REVIEW_TOKEN` are configured, the dispatcher posts the payload to that endpoint. If the endpoint is not configured, it uploads the payload as a GitHub Actions artifact for manual or external Grok Build pickup.
 - `.github/workflows/review-validator.yml` is the required branch-protection check. It fails unless `REVIEWS/review_NNN.md` exists in the PR branch and contains an explicit Grok Build `APPROVE` decision.
+- `.github/workflows/review-decision-router.yml` is the non-blocking handoff router. It does not unlock merge gates by itself; it converts the Grok decision into automation signals:
+  - `APPROVE` adds `approved-by-grok` and routes to `antigravity.merge`.
+  - `REQUEST_CHANGES` adds `changes-requested-by-grok` and `needs-antigravity-work`, then routes to `antigravity.fix`.
+  - `REJECT` adds `rejected-by-grok` and `operator-review-required`, then routes to `operator.review`.
+  - Missing reviews route as `NONE` and do not fail the workflow.
+- `agent-runner/route-review-decision.js` writes `REVIEWS/handoff_payload_NNN.json` and posts the same payload to `HANDOFF_ROUTER_ENDPOINT` when that secret is configured. `HANDOFF_ROUTER_TOKEN` is sent as a bearer token when present.
 
 ### Review Decision File Contract
 
@@ -152,6 +161,10 @@ Configure the following settings on GitHub to enforce this pipeline:
 - [ ] **GitHub Action: Grok Review Dispatcher**:
   - Configure `GROK_REVIEW_ENDPOINT` and optional `GROK_REVIEW_TOKEN` repository secrets when an external Grok Build service is available.
   - Require the `Review Validator` status check in branch protection.
+- [ ] **GitHub Action: Review Decision Router**:
+  - Configure optional `HANDOFF_ROUTER_ENDPOINT` and `HANDOFF_ROUTER_TOKEN` repository secrets when an external/local agent router should receive decision payloads.
+  - Confirm repository labels may be created by GitHub Actions, or pre-create `approved-by-grok`, `changes-requested-by-grok`, `needs-antigravity-work`, `rejected-by-grok`, `operator-review-required`, and `needs-grok-review`.
+  - Keep auto-merge disabled until the label/comment/webhook handoff path is validated.
 
 ---
 
