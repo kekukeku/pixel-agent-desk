@@ -135,7 +135,7 @@ describe('sessionPersistence', () => {
       Object.defineProperty(process, 'platform', { value: origPlatform, configurable: true });
     });
 
-    test('skips agents without PID', () => {
+    test('recovers agents without PID', () => {
       const savedState = {
         agents: [{ id: 'agent-no-pid', state: 'Working' }],
         pids: [],
@@ -146,11 +146,14 @@ describe('sessionPersistence', () => {
 
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
-      expect(agentManager.updateAgent).not.toHaveBeenCalled();
-      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('no pid'));
+      expect(agentManager.updateAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'agent-no-pid', state: 'Working' }),
+        'recover'
+      );
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: agent-no'));
     });
 
-    test('skips agents with dead PIDs', () => {
+    test('recovers agents with dead PIDs', () => {
       const savedState = {
         agents: [{ id: 'agent-dead', state: 'Working' }],
         pids: [['agent-dead', 99999999]], // likely dead PID
@@ -159,14 +162,17 @@ describe('sessionPersistence', () => {
       fs.existsSync.mockReturnValue(true);
       fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
 
-      // process.kill will throw for non-existent PID
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
-      expect(agentManager.updateAgent).not.toHaveBeenCalled();
-      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('pid gone'));
+      expect(agentManager.updateAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'agent-dead', state: 'Working' }),
+        'recover'
+      );
+      expect(sessionPids.get('agent-dead')).toBe(99999999);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: agent-de'));
     });
 
-    test('skips agents where PID is not a Claude process', () => {
+    test('recovers agents where PID is not a Claude process', () => {
       const savedState = {
         agents: [{ id: 'agent-wrong', state: 'Working' }],
         pids: [['agent-wrong', process.pid]],
@@ -175,13 +181,14 @@ describe('sessionPersistence', () => {
       fs.existsSync.mockReturnValue(true);
       fs.readFileSync.mockReturnValue(JSON.stringify(savedState));
 
-      // isClaudeProcess returns false (not a Claude process)
-      execFileSync.mockReturnValue(''); // empty result → not Claude
-
       recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
 
-      expect(agentManager.updateAgent).not.toHaveBeenCalled();
-      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('not claude'));
+      expect(agentManager.updateAgent).toHaveBeenCalledWith(
+        expect.objectContaining({ sessionId: 'agent-wrong', state: 'Working' }),
+        'recover'
+      );
+      expect(sessionPids.get('agent-wrong')).toBe(process.pid);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Restored: agent-wr'));
     });
 
     test('handles missing state.json gracefully', () => {

@@ -28,9 +28,11 @@ class SessionScanner {
     /**
      * Start periodic scanning
      * @param {number} intervalMs Scan interval (default 60 seconds)
+     * @param {boolean} enableScanning Whether to actually run the scan (default true for compatibility with tests)
      */
-    start(intervalMs = 60_000) {
-        this.debugLog('[SessionScanner] Started');
+    start(intervalMs = 60_000, enableScanning = true) {
+        this.debugLog(`[SessionScanner] Started (scanning enabled: ${enableScanning})`);
+        if (!enableScanning) return;
         this.scanAll(); // Run once immediately
         this.scanInterval = setInterval(() => this.scanAll(), intervalMs);
     }

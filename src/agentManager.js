@@ -1,16 +1,28 @@
-/**
- * Multi-Agent Manager
- * - P2-10: Only emit events on state changes
- * - Display name improvement: use cwd basename when slug is absent
- */
-
 const EventEmitter = require('events');
 const path = require('path');
+const os = require('os');
+const fs = require('fs');
 const { formatSlugToDisplayName } = require('./utils');
 
 // Single source of truth: public/shared/avatars.json
 const AVATAR_FILES = require('../public/shared/avatars.json');
 const AVATAR_COUNT = AVATAR_FILES.length;
+
+/**
+ * Safely read and parse ~/.pixel-agent-desk/name-map.json
+ * @returns {Record<string, string>}
+ */
+function getNameMap() {
+  const mapPath = path.join(os.homedir(), '.pixel-agent-desk', 'name-map.json');
+  try {
+    if (fs.existsSync(mapPath)) {
+      return JSON.parse(fs.readFileSync(mapPath, 'utf-8'));
+    }
+  } catch (e) {
+    console.error('[AgentManager] Error reading name-map.json:', e.message);
+  }
+  return {};
+}
 
 /**
  * Merge a field: entry value wins if defined, then existing, then default.
@@ -87,7 +99,7 @@ class AgentManager extends EventEmitter {
       sessionId: entry.sessionId,
       agentId: entry.agentId,
       slug: entry.slug,
-      displayName: this.formatDisplayName(entry.slug, entry.projectPath),
+      displayName: this.formatDisplayName(entry.slug, entry.projectPath, agentId),
       projectPath: entry.projectPath,
       jsonlPath: entry.jsonlPath || (existingAgent ? existingAgent.jsonlPath : null),
       model: m('model'),
@@ -227,11 +239,18 @@ class AgentManager extends EventEmitter {
 
   /**
    * Determine display name
-   * 1. slug (e.g., "toasty-sparking-lecun" → "Toasty Sparking Lecun")
-   * 2. basename of projectPath (e.g., "pixel-agent-desk-master")
-   * 3. Fallback: "Agent"
+   * 1. ~/.pixel-agent-desk/name-map.json (session_id -> name mapping)
+   * 2. slug (e.g., "toasty-sparking-lecun" → "Toasty Sparking Lecun")
+   * 3. basename of projectPath (e.g., "pixel-agent-desk-master")
+   * 4. Fallback: "Agent"
    */
-  formatDisplayName(slug, projectPath) {
+  formatDisplayName(slug, projectPath, agentId) {
+    if (agentId) {
+      const nameMap = getNameMap();
+      if (nameMap[agentId]) {
+        return nameMap[agentId];
+      }
+    }
     if (slug) {
       return formatSlugToDisplayName(slug);
     }

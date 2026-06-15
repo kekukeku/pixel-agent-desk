@@ -121,9 +121,9 @@ app.whenReady().then(() => {
   agentManager = new AgentManager();
   agentManager.start();
 
-  // 2. Start session scanner
+  // 2. Start session scanner (scanning disabled for hook events)
   sessionScanner = new SessionScanner(agentManager, debugLog);
-  sessionScanner.start(60_000);
+  sessionScanner.start(60_000, false);
 
   // 2.5. Start heatmap scanner
   heatmapScanner = new HeatmapScanner(debugLog);

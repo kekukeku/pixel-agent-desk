@@ -78,28 +78,11 @@ function recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDon
 
     let recoveredCount = 0;
     for (const agent of savedAgents) {
-      const pid = savedPids.get(agent.id);
+      const pid = savedPids.get(agent.id) || 0;
 
-      if (!pid) {
-        debugLog(`[Recover] Skipped agent (no pid): ${agent.id.slice(0, 8)}`);
-        continue;
+      if (pid) {
+        sessionPids.set(agent.id, pid);
       }
-
-      // Check if PID exists
-      try {
-        process.kill(pid, 0);
-      } catch (e) {
-        debugLog(`[Recover] Skipped dead agent (pid gone): ${agent.id.slice(0, 8)}`);
-        continue;
-      }
-
-      // Verify PID is an actual Claude process (prevent Windows PID reuse)
-      if (!isClaudeProcess(pid)) {
-        debugLog(`[Recover] Skipped agent (pid=${pid} is not claude): ${agent.id.slice(0, 8)}`);
-        continue;
-      }
-
-      sessionPids.set(agent.id, pid);
       firstPreToolUseDone.set(agent.id, true);
 
       agentManager.updateAgent({
@@ -114,7 +97,7 @@ function recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDon
       }, 'recover');
 
       recoveredCount++;
-      debugLog(`[Recover] Restored: ${agent.id.slice(0, 8)} (${agent.displayName}) state=${agent.state} pid=${pid} (will re-verify via liveness)`);
+      debugLog(`[Recover] Restored: ${agent.id.slice(0, 8)} (${agent.displayName}) state=${agent.state} pid=${pid}`);
     }
 
     debugLog(`[Recover] Done — ${recoveredCount} session(s) restored from state.json`);
