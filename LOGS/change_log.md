@@ -24,3 +24,11 @@ All notable changes to this project will be documented in this file.
 - Added Antigravity pre-review self-check checklists inside TEAM_RULES.md and implemented them as a PR template checklist inside PR_TEMPLATE.md.
 - Added Grok Build review guidelines to separate issues into blocking, non-blocking, and optional follow-ups, and require architectural tradeoff analysis.
 - Defined a post-merge reconciliation checklist requiring alignment of task files, central registry, review files, validation master documents, and the change log.
+
+## [2026-06-16] TASK-004: Implement review decision router MVP
+
+- Added an `agent-runner` script suite containing `resolve-task.js`, `trigger-review.js`, `dispatch-grok-review.js`, `validate-review.js`, and `route-review-decision.js`.
+- Implemented `route-review-decision.js` to parse Grok Build decisions (`APPROVE`, `REQUEST_CHANGES`, `REJECT`) and map them to downstream automation targets, labels, comments, and payload artifacts.
+- Added GitHub Actions workflows for Grok review dispatching, merge validator gating, and decision routing with job-level guards to prevent self-applied label loop triggers.
+- Updated `TEAM_RULES.md` and `REVIEWS/README.md` to document the router triggers and payload contracts.
+- Added unit tests under `__tests__/agentRunner.test.js` validating all decision routes.

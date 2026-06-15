@@ -23,7 +23,7 @@ To prevent state drift between different folders and GitHub PR statuses, this re
 | **TASK-001** | `MERGED` | [task/task_001_initialize_governance](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_001.md) | 2026-06-16 |
 | **TASK-002** | `MERGED` | [task/task_002_provider_agnostic_agent_events](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_002.md) | 2026-06-16 |
 | **TASK-003** | `MERGED` | [task/task_003_governance_retrospective_rules](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_003.md) | 2026-06-16 |
-| **TASK-004** | `UNDER_REVIEW` | [task/task_004_review_decision_router](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_004.md) | 2026-06-16 |
+| **TASK-004** | `MERGED` | [task/task_004_review_decision_router](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_004.md) | 2026-06-16 |
 
 ---
 

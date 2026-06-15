@@ -1,14 +1,14 @@
 # TASK-004: Implement review decision router MVP
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_004_review_decision_router`
-- **PR URL**: `TBD`
-- **Linked Review**: [review_request_004.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_request_004.md)
+- **PR URL**: `N/A (local merge @ 8f75d3a)`
+- **Linked Review**: [review_004.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_004.md)
 - **Dependencies**: [TASK-003](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_003.md)
 
 ---
