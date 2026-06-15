@@ -1,14 +1,14 @@
 # TASK-002: Make Pixel Agent Desk provider-agnostic while preserving Claude support
 
-- **Status**: `COMPLETED`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_002_provider_agnostic_agent_events`
-- **PR URL**: `TBD`
-- **Linked Review**: `TBD`
+- **PR URL**: `N/A (local merge @ 5560418)`
+- **Linked Review**: [review_002.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_002.md)
 - **Dependencies**: [TASK-001](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_001.md)
 
 ---
