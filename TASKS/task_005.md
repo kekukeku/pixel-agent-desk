@@ -1,6 +1,6 @@
 # TASK-005: Personalize office floorplan title with local username
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
