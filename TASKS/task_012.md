@@ -7,7 +7,7 @@
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `MEDIUM`
 - **Branch**: `task/task_012_subscription_usage_ui`
-- **PR URL**: `N/A (local merge)`
+- **PR URL**: `N/A (local merge @ 2bbdba8)`
 - **Linked Review**: [review_012.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_012.md)
 - **Dependencies**: [TASK-011](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_011.md)
 
