@@ -345,17 +345,25 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
     """
     dispatch_key = make_dispatch_key(task_num, target, trigger, state_or_decision)
 
-    # Always write the fallback payload file first (audit artifact)
-    if target == "antigravity":
-        fallback_path = os.path.join(state.project_root, "REVIEWS", f"task_handoff_{task_num}.json")
+    # Write fallback payload file — but ONLY for the task-execution and registry pipelines.
+    # review_decision dispatches must NOT write task_handoff_NNN.json: that file is exclusively
+    # owned by the task-status pipeline. The review router writes handoff_payload_NNN.json via
+    # route-review-decision.js; the dispatch_result_* file (written by the worker) is the audit
+    # artifact for the router path.
+    if trigger != "review_decision":
+        if target == "antigravity":
+            fallback_path = os.path.join(state.project_root, "REVIEWS", f"task_handoff_{task_num}.json")
+        else:
+            fallback_path = os.path.join(state.project_root, "REVIEWS", f"grok_handoff_{task_num}.json")
+        try:
+            os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
+            with open(fallback_path, "w", encoding="utf-8") as hf:
+                json.dump(payload, hf, indent=2)
+        except Exception:
+            pass
     else:
-        fallback_path = os.path.join(state.project_root, "REVIEWS", f"grok_handoff_{task_num}.json")
-    try:
-        os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
-        with open(fallback_path, "w", encoding="utf-8") as hf:
-            json.dump(payload, hf, indent=2)
-    except Exception:
-        pass
+        # For review_decision: derive fallback_path only for the warning message below
+        fallback_path = os.path.join(state.project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
 
     # Idempotency: skip if already dispatched in this session
     if dispatch_key in state.dispatched_keys:
@@ -503,7 +511,38 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
 
     return dispatches
 
-# Global Keep Alive Thread Target
+def perform_dispatch_one(project_root, target, task_num, trigger, state_or_decision,
+                         payload, timeout_wait=15):
+    """
+    CI test helper: create a minimal WatcherState from project_root config,
+    call dispatch_handoff() once, then block until the background worker
+    thread completes (up to timeout_wait seconds).
+
+    Returns the parsed dispatch_result_NNN_target.json dict, or raises
+    RuntimeError if the result file does not appear within timeout_wait seconds.
+
+    This function is called by --dispatch-test CLI flag and must not be used
+    from within the watchdog event loop.
+    """
+    state = WatcherState(project_root)
+    dispatch_handoff(state, target, task_num, trigger, state_or_decision, payload)
+    result_path = os.path.join(
+        project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json"
+    )
+    deadline = time.time() + timeout_wait
+    while time.time() < deadline:
+        if os.path.exists(result_path):
+            try:
+                with open(result_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"dispatch_result not written within {timeout_wait}s: {result_path}"
+    )
+
+
 def keep_alive_loop(state):
     while True:
         interval = state.config.get("keep_alive_seconds", DEFAULT_KEEP_ALIVE_SECONDS)
@@ -598,6 +637,7 @@ def main():
     project_root = None
     parse_only = False
     simulate_handoff = False
+    dispatch_test_args = None  # Set if --dispatch-test JSON arg is present
 
     args = sys.argv[1:]
     i = 0
@@ -612,6 +652,15 @@ def main():
         elif arg == "--simulate-handoff":
             simulate_handoff = True
             i += 1
+        elif arg == "--dispatch-test" and i + 1 < len(args):
+            # Format: --dispatch-test '<json_string>'
+            # JSON keys: target, task_num, trigger, state, payload (optional)
+            try:
+                dispatch_test_args = json.loads(args[i+1])
+            except Exception as e:
+                print(f"Error: --dispatch-test argument must be valid JSON: {e}", file=sys.stderr)
+                sys.exit(1)
+            i += 2
         else:
             i += 1
 
@@ -641,6 +690,38 @@ def main():
         simulated = perform_simulate_handoff(project_root, execution_mode=mode, config=tmp_state.config)
         print(json.dumps(simulated, indent=2))
         sys.exit(0)
+
+    if dispatch_test_args is not None:
+        # --dispatch-test: CI integration test hook.
+        # Runs a single dispatch_handoff() call and waits for the result file.
+        # Exits 0 and prints dispatch_result JSON on success; exits 1 on failure.
+        required = {"target", "task_num", "trigger", "state"}
+        missing = required - dispatch_test_args.keys()
+        if missing:
+            print(f"Error: --dispatch-test JSON missing required keys: {missing}", file=sys.stderr)
+            sys.exit(1)
+        payload = dispatch_test_args.get("payload") or {
+            "task_num": dispatch_test_args["task_num"],
+            "project_root": project_root,
+            "status": dispatch_test_args["state"],
+            "timestamp": time.time()
+        }
+        timeout_wait = dispatch_test_args.get("timeout_wait", 15)
+        try:
+            result = perform_dispatch_one(
+                project_root,
+                dispatch_test_args["target"],
+                dispatch_test_args["task_num"],
+                dispatch_test_args["trigger"],
+                dispatch_test_args["state"],
+                payload,
+                timeout_wait=timeout_wait
+            )
+            print(json.dumps(result, indent=2))
+            sys.exit(0 if result.get("success") else 1)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     if not HAS_WATCHDOG:
         print("Error: The 'watchdog' package is required to run the watcher in daemon/monitoring mode.", file=sys.stderr)

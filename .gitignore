@@ -63,3 +63,8 @@ latest*.yml
 
 # Removed subproject (prevent re-creation)
 pixel_office/
+
+# Watcher dispatch / runtime artifacts
+REVIEWS/dispatch_result_*.json
+REVIEWS/task_handoff_*.json
+REVIEWS/grok_handoff_*.json

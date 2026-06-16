@@ -115,57 +115,79 @@ To setup and run the repository watcher on a clean checkout, follow these steps:
 
 ### Operating Modes
 
-The watcher supports two modes of operation depending on the automation configuration:
+The watcher supports two execution modes, controlled by the `execution_mode` config key (or env var override). **The default is `visual-only`** — no commands or webhooks are executed until you explicitly opt in to `active`.
 
 #### 1. Visual-Only Mode (Default)
-If no commands or webhooks are configured in `~/.pixel-agent-desk/watcher.json`, the watcher operates in **Visual-Only Mode**.
-It will still post character state updates to the desktop application to animate avatars, but instead of automatically executing commands or webhooks, it writes fallback handoff payload files to the `REVIEWS/` folder and logs a warning to stderr. This allows an operator to inspect the files and manually proceed.
 
-**Fallback Payload Files and Trigger Conditions:**
+`"execution_mode": "visual-only"` (or unset)
 
-*   **Antigravity Handoff File:** `REVIEWS/task_handoff_NNN.json` (where `NNN` is the 3-digit task number, e.g. `006`).
-    *   *Trigger Condition:* A task file under `TASKS/task_NNN.md` is modified or created with status `DRAFT` or `IN_PROGRESS`, and no command or webhook is configured for `antigravity` in `watcher.json`.
-    *   *Payload Fields:*
-        *   `task_num`: String (3-digit task number, e.g. `"006"`).
-        *   `branch`: String (branch name associated with the task, e.g. `"task/task_006_pixel_agent_desk_watcher"`).
-        *   `project_root`: String (absolute path of the watched repository).
-        *   `status`: String (`"DRAFT"` or `"IN_PROGRESS"`).
-        *   `timestamp`: Number (float epoch timestamp).
-    *   *Example JSON:*
-        ```json
-        {
-          "task_num": "006",
-          "branch": "task/task_006_pixel_agent_desk_watcher",
-          "project_root": "/Users/user/pixel-agent-desk",
-          "status": "IN_PROGRESS",
-          "timestamp": 1781584800.123
-        }
-        ```
+The watcher posts character state updates to the desktop application and writes fallback JSON payload files to `REVIEWS/` for manual inspection. No commands or webhooks are triggered.
 
-*   **Grok Build Handoff File:** `REVIEWS/grok_handoff_NNN.json`.
-    *   *Trigger Condition:* A task row's status in `AGENT_STATE.md` transitions to `UNDER_REVIEW`, and no command or webhook is configured for `grok` in `watcher.json`.
-    *   *Payload Fields:*
-        *   `task_num`: String (3-digit task number, e.g. `"006"`).
-        *   `project_root`: String (absolute path of the watched repository).
-        *   `status`: String (`"UNDER_REVIEW"`).
-        *   `timestamp`: Number (float epoch timestamp).
-    *   *Example JSON:*
-        ```json
-        {
-          "task_num": "006",
-          "project_root": "/Users/user/pixel-agent-desk",
-          "status": "UNDER_REVIEW",
-          "timestamp": 1781584800.456
-        }
-        ```
+**Fallback payload files written in visual-only mode:**
 
-#### 2. Execution Handoff Mode
-If commands or webhooks are configured for `antigravity` or `grok` in `~/.pixel-agent-desk/watcher.json`, the watcher automatically executes the command (in a subprocess shell) or issues an HTTP POST request to the webhook URL when trigger conditions are met.
+| Trigger | File written | Condition |
+|---|---|---|
+| Task `DRAFT` / `IN_PROGRESS` | `REVIEWS/task_handoff_NNN.json` | `TASKS/task_NNN.md` status changes |
+| Registry `UNDER_REVIEW` | `REVIEWS/grok_handoff_NNN.json` | `AGENT_STATE.md` row transitions |
+
+> **Pipeline separation**: `task_handoff_NNN.json` is exclusively owned by the task-execution pipeline (Antigravity). The review-decision router (`route-review-decision.js`) produces `handoff_payload_NNN.json`. These files must never be conflated.
+
+**`task_handoff_NNN.json` payload fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `task_num` | string | 3-digit task number (e.g. `"008"`) |
+| `branch` | string | Branch associated with the task |
+| `project_root` | string | Absolute path of the watched repository |
+| `status` | string | `"DRAFT"` or `"IN_PROGRESS"` |
+| `timestamp` | number | Float epoch timestamp |
+
+**`grok_handoff_NNN.json` payload fields:**
+
+| Field | Type | Description |
+|---|---|---|
+| `task_num` | string | 3-digit task number |
+| `project_root` | string | Absolute path of the watched repository |
+| `status` | string | `"UNDER_REVIEW"` |
+| `timestamp` | number | Float epoch timestamp |
+
+#### 2. Active Mode
+
+`"execution_mode": "active"`
+
+The watcher dispatches configured commands or webhooks asynchronously via background threads. Each dispatch:
+1. Writes the fallback payload file (audit artifact, task-execution pipeline only)
+2. Checks an in-session idempotency key — skips if already fired for the same `task:target:trigger:state`
+3. Spawns a background thread to run the command (`subprocess` with timeout) or POST the webhook
+4. Writes `REVIEWS/dispatch_result_{task_num}_{target}.json` with success/failure details
+
+**If `execution_mode` is `active` but no `command` or `webhook` is configured for a target,** the watcher prints an error to stderr and writes a failed `dispatch_result_*` file. It does **not** silently pass.
+
+**`dispatch_result_NNN_target.json` schema:**
+
+| Field | Type | Description |
+|---|---|---|
+| `task_num` | string | Task number |
+| `target` | string | `"antigravity"` or `"grok"` |
+| `trigger` | string | `"task_status"`, `"registry_state"`, or `"review_decision"` |
+| `state` | string | State or decision that triggered dispatch |
+| `dispatch_key` | string | Idempotency key: `{task_num}:{target}:{trigger}:{state}` |
+| `transport` | string | `"command"` or `"webhook"` or `null` |
+| `success` | boolean | Whether the dispatch completed successfully |
+| `returncode` | integer \| null | Command exit code (`null` for webhooks) |
+| `http_status` | integer \| null | HTTP response status (`null` for commands) |
+| `timed_out` | boolean | Whether the command exceeded `command_timeout_seconds` |
+| `stdout_excerpt` | string | First `output_capture_bytes` of stdout |
+| `stderr_excerpt` | string | First `output_capture_bytes` of stderr |
+| `error` | string \| null | Exception message on unexpected failure |
+| `started_at` | number | Float epoch timestamp of worker start |
+| `finished_at` | number | Float epoch timestamp of worker finish |
 
 ### Configuration (`~/.pixel-agent-desk/watcher.json`)
 
 ```json
 {
+  "execution_mode": "visual-only",
   "antigravity": {
     "command": "node scripts/run-executor.js {task_num}",
     "webhook": "http://localhost:3000/webhook/antigravity"
@@ -175,6 +197,8 @@ If commands or webhooks are configured for `antigravity` or `grok` in `~/.pixel-
     "webhook": null
   },
   "keep_alive_seconds": 60,
+  "command_timeout_seconds": 600,
+  "output_capture_bytes": 8192,
   "agents": {
     "codex": {
       "id": "my-codex-id",
@@ -185,14 +209,56 @@ If commands or webhooks are configured for `antigravity` or `grok` in `~/.pixel-
 }
 ```
 
-- `keep_alive_seconds`: Interval in seconds to post periodic keep-alive `agent.idle` events (defaults to `60`).
-- `{task_num}`: Replaced automatically by the watcher with the 3-digit task number (e.g. `006`).
-- `agents`: Customize name, id, and type for `codex`, `antigravity`, and `grok-build` agents.
-- **Environment Overrides**:
-  - Keep alive interval: `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE=60`
-  - Agent attributes: `PIXEL_AGENT_DESK_AGENT_[CODEX/ANTIGRAVITY/GROK_BUILD]_[ID/NAME/TYPE]` (e.g. `PIXEL_AGENT_DESK_AGENT_CODEX_NAME="My Codex"`).
+**Configuration reference:**
+
+| Key | Default | Env override | Description |
+|---|---|---|---|
+| `execution_mode` | `"visual-only"` | `PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE` | `"visual-only"` or `"active"` |
+| `antigravity.command` | `""` | — | Shell command for Antigravity handoffs; `{task_num}` is replaced at runtime |
+| `antigravity.webhook` | `""` | — | HTTP POST URL for Antigravity handoffs (used if command is empty) |
+| `grok.command` | `"node agent-runner/trigger-review.js {task_num}"` | — | Shell command for Grok review dispatch |
+| `grok.webhook` | `""` | — | HTTP POST URL for Grok dispatch (used if command is empty) |
+| `keep_alive_seconds` | `60` | `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE` | Periodic `agent.idle` heartbeat interval |
+| `command_timeout_seconds` | `600` | `PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT` | Max seconds before a dispatched command is killed |
+| `output_capture_bytes` | `8192` | `PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES` | Max bytes captured from stdout/stderr per dispatch |
+| `agents.*.id/name/type` | see defaults | `PIXEL_AGENT_DESK_AGENT_{ROLE}_{FIELD}` | Override per-agent identity (roles: `CODEX`, `ANTIGRAVITY`, `GROK_BUILD`) |
+
+- `{task_num}`: Replaced with the 3-digit task number (e.g. `006`) at dispatch time.
+- Commands are **always non-blocking** — they run in background threads; the watcher loop continues.
+- If both `command` and `webhook` are set, `command` takes precedence.
+
+### Dry-run / Planning Mode (`--simulate-handoff`)
+
+Run without starting the watchdog daemon:
+
+```sh
+python3 watcher.py --simulate-handoff [--project-root /path/to/repo]
+```
+
+Scans the repository and prints a JSON array of every dispatch that *would* fire given the current file states and configured `execution_mode`. **No files are written, no commands are executed.**
+
+Each entry includes `dispatch_key`, `transport` (`command`/`webhook`/`none`), `would_error_active` (true if mode is active but no consumer configured), and `payload_shape`.
+
+### Troubleshooting
+
+| Symptom | Cause | Fix |
+|---|---|---|
+| No commands executed, only JSON files appear in `REVIEWS/` | `execution_mode` is `"visual-only"` (default) | Set `"execution_mode": "active"` in `watcher.json` or `PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE=active` |
+| `Error: execution_mode=active but no command/webhook configured` on stderr | `active` mode enabled but target has no consumer | Add `command` or `webhook` for the failing target in `watcher.json` |
+| `dispatch_result_NNN_target.json` shows `"success": false, "timed_out": true` | Command ran longer than `command_timeout_seconds` | Increase `command_timeout_seconds` or optimize the command |
+| `task_handoff_NNN.json` is not being updated on review events | Correct — review-decision dispatches only write `dispatch_result_*`; `task_handoff_*` is exclusively for task-status pipeline | Inspect `dispatch_result_NNN_antigravity.json` for review dispatch results |
+| Dispatch fires only once per session even after file re-save | Idempotency key deduplicated in-session | Restart the watcher; idempotency resets on start |
+
+**Runtime artifacts** (gitignored, never committed):
+
+```
+REVIEWS/task_handoff_*.json      ← visual-only fallback: task-execution pipeline
+REVIEWS/grok_handoff_*.json      ← visual-only fallback: review-dispatch pipeline
+REVIEWS/dispatch_result_*.json   ← active mode result records (per target per task)
+```
 
 ---
+
 
 ## Normalized Agent Event API
 
