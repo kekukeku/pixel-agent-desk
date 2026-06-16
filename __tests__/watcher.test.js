@@ -166,13 +166,12 @@ describe('watcher.py --simulate-handoff integration', () => {
     expect(entry.dispatch_key).toBe('009:grok:registry_state:UNDER_REVIEW');
   });
 
-  test('flags would_error_active when execution_mode=active and no command', () => {
+  test('does not dispatch antigravity for DRAFT tasks', () => {
     fs.writeFileSync(
       path.join(tempDir, 'TASKS', 'task_010.md'),
       `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
       'utf8'
     );
-    // Run with active mode via env override (no watcher.json command set)
     const stdout = execSync(
       `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
       {
@@ -183,8 +182,7 @@ describe('watcher.py --simulate-handoff integration', () => {
     );
     const result = JSON.parse(stdout);
     const entry = result.find(e => e.task_num === '010' && e.target === 'antigravity');
-    expect(entry).toBeDefined();
-    expect(entry.would_error_active).toBe(true);
+    expect(entry).toBeUndefined();
   });
 
   test('simulate-handoff does not write any files', () => {
@@ -339,7 +337,7 @@ describe('watcher.py --dispatch-test P0 integration', () => {
       target: 'antigravity',
       task_num: '097',
       trigger: 'task_status',
-      state: 'DRAFT',
+      state: 'IN_PROGRESS',
       timeout_wait: 5,
     };
 
@@ -357,7 +355,7 @@ describe('watcher.py --dispatch-test P0 integration', () => {
     expect(fs.existsSync(handoffFile)).toBe(true);
     const handoff = JSON.parse(fs.readFileSync(handoffFile, 'utf8'));
     expect(handoff.task_num).toBe('097');
-    expect(handoff.status).toBe('DRAFT');
+    expect(handoff.status).toBe('IN_PROGRESS');
 
     // No dispatch_result should exist
     const resultFile = path.join(tempDir, 'REVIEWS', 'dispatch_result_097_antigravity.json');
@@ -471,4 +469,3 @@ describe('watcher.py --dispatch-test P0 integration', () => {
     expect(fs.existsSync(resultFile)).toBe(true);
   });
 });
-

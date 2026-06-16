@@ -86,6 +86,14 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
 2. **Review Signal Required**: No branch can be merged without an explicit `APPROVE` verdict in `REVIEWS/review_NNN.md` authored by Grok Build.
 3. **Execution**: Once Grok Build writes the approval and GitHub branch protection status checks pass, Antigravity executes the physical merge.
 
+### Local Watcher State Contract
+
+- Codex may create tasks as `DRAFT`. `DRAFT` is planning-only and must not trigger Antigravity.
+- The planner or watcher releases a task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS`.
+- The watcher dispatches Antigravity only for `IN_PROGRESS` task status changes. It must not dispatch executor work for `DRAFT`.
+- Antigravity must mark implementation complete by moving the task to `UNDER_REVIEW` in `AGENT_STATE.md` (and keeping task metadata aligned). It must not use `COMPLETED`.
+- `UNDER_REVIEW` is the only local state that triggers Grok Build review dispatch.
+
 ---
 
 ## 4. Event-Driven Review Trigger Contract
@@ -106,7 +114,7 @@ To automate reviews, Grok Build does not continuously poll. It relies on GitHub 
 
 - **Trigger A (Event-based)**: When a PR is `opened` or `synchronized` (new commits pushed), a GitHub Action triggers the Grok Build review runner.
 - **Trigger B (Label-based)**: Manually adding the `needs-grok-review` label to a PR triggers a re-run of the review runner.
-- **Trigger C (Local Runner)**: Antigravity can manually trigger the review process locally after opening a PR by executing `cd agent-runner && npm run trigger-review -- NNN` which automatically parses the task markdown and generates the corresponding `REVIEWS/review_request_NNN.md` file.
+- **Trigger C (Local Runner)**: Antigravity completes implementation by moving `AGENT_STATE.md` to `UNDER_REVIEW`; the local watcher then generates `REVIEWS/review_request_NNN.md`, prepares the diff payload, and dispatches Grok Build.
 - **Trigger D (Decision Router)**: When `REVIEWS/review_NNN.md` appears or changes on a PR branch, `.github/workflows/review-decision-router.yml` parses the decision and routes the next handoff through labels, PR comments, uploaded payload artifacts, and the optional `HANDOFF_ROUTER_ENDPOINT` webhook.
 
 ### GitHub Actions Implementation
@@ -224,7 +232,7 @@ To ensure task specifications are unambiguous and parseable, Codex must adhere t
 3. **Explicit Testing Requirements**: The `## 3. Acceptance Criteria` must include a specific item stating which test suites to execute or write (e.g. `npm test`, specific test names, or coverage requirements).
 4. **Explicit Documentation Requirements**: When a task introduces user-facing features, configuration keys, or workflow changes, the acceptance criteria must specify which documentation files (e.g., `README.md`, `TEAM_RULES.md`) must be updated.
 5. **External Reference Validity**: If the task relies on external resources (such as model API pricing), Codex must include verified source URLs and a `updatedAt` timestamp indicating when the reference was last checked.
-6. **Antigravity Start Prompt**: Always include a one-sentence instruction for Antigravity at the end of the task file (outside the template structure) to initiate the task cleanly.
+6. **Antigravity Start Prompt**: Always include a one-sentence instruction for Antigravity at the end of the task file (outside the template structure). The instruction must say that completion means moving the task to `UNDER_REVIEW`, not `COMPLETED`.
 
 ---
 

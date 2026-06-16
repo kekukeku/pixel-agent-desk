@@ -196,66 +196,66 @@ app.whenReady().then(() => {
     testSubagents.forEach(agent => agentManager.updateAgent(agent, 'test'));
   }
 
-  // 9. Create UI
-  windowManager.createWindow();
+  // Helper: send to main + dashboard windows, then persist state
+  function broadcast(mainChannel, dashChannel, data, dashData) {
+    const mw = windowManager.mainWindow;
+    if (mw && !mw.isDestroyed()) mw.webContents.send(mainChannel, data);
+    const dw = windowManager.dashboardWindow;
+    if (dw && !dw.isDestroyed()) dw.webContents.send(dashChannel, dashData !== undefined ? dashData : data);
+    savePersistedState({ agentManager, sessionPids });
+  }
 
-  // Send current state when renderer is ready
+  function closeDashboardIfEmpty() {
+    if (agentManager.getAllAgents().length === 0) {
+      windowManager.closeDashboardWindow();
+    }
+  }
+
+  agentListeners = {
+    onAdded: (agent) => {
+      broadcast('agent-added', 'dashboard-agent-added', agent, adaptAgentToDashboard(agent));
+    },
+    onUpdated: (agent) => {
+      broadcast('agent-updated', 'dashboard-agent-updated', agent, adaptAgentToDashboard(agent));
+    },
+    onRemoved: (data) => {
+      broadcast('agent-removed', 'dashboard-agent-removed', data);
+      closeDashboardIfEmpty();
+    },
+    onCleaned: (data) => {
+      broadcast('agents-cleaned', 'dashboard-agent-removed', data, { type: 'batch', ...data });
+      closeDashboardIfEmpty();
+    }
+  };
+
+  agentManager.on('agent-added', agentListeners.onAdded);
+  agentManager.on('agent-updated', agentListeners.onUpdated);
+  agentManager.on('agent-removed', agentListeners.onRemoved);
+  agentManager.on('agents-cleaned', agentListeners.onCleaned);
+
+  // 9. Create UI (directly open dashboard window)
+  windowManager.createDashboardWindow();
+
+  hookProcessor.flushPendingStarts();
+
+  // Send current state when renderer is ready (for backward compatibility/legacy code)
   ipcMain.once('renderer-ready', () => {
     debugLog('[Main] renderer-ready event received!');
-
-    // Helper: send to main + dashboard windows, then persist state
-    function broadcast(mainChannel, dashChannel, data, dashData) {
-      const mw = windowManager.mainWindow;
-      if (mw && !mw.isDestroyed()) mw.webContents.send(mainChannel, data);
-      const dw = windowManager.dashboardWindow;
-      if (dw && !dw.isDestroyed()) dw.webContents.send(dashChannel, dashData !== undefined ? dashData : data);
-      savePersistedState({ agentManager, sessionPids });
-    }
-
-    function closeDashboardIfEmpty() {
-      if (agentManager.getAllAgents().length === 0) {
-        windowManager.closeDashboardWindow();
-      }
-    }
-
-    agentListeners = {
-      onAdded: (agent) => {
-        broadcast('agent-added', 'dashboard-agent-added', agent, adaptAgentToDashboard(agent));
-      },
-      onUpdated: (agent) => {
-        broadcast('agent-updated', 'dashboard-agent-updated', agent, adaptAgentToDashboard(agent));
-      },
-      onRemoved: (data) => {
-        broadcast('agent-removed', 'dashboard-agent-removed', data);
-        closeDashboardIfEmpty();
-      },
-      onCleaned: (data) => {
-        broadcast('agents-cleaned', 'dashboard-agent-removed', data, { type: 'batch', ...data });
-        closeDashboardIfEmpty();
-      }
-    };
-
-    agentManager.on('agent-added', agentListeners.onAdded);
-    agentManager.on('agent-updated', agentListeners.onUpdated);
-    agentManager.on('agent-removed', agentListeners.onRemoved);
-    agentManager.on('agents-cleaned', agentListeners.onCleaned);
-
-    // Send sessions that arrived before ready and recovered data
     const allAgents = agentManager.getAllAgents();
     if (allAgents.length > 0) {
       debugLog(`[Main] Sending ${allAgents.length} agents to newly ready renderer`);
       const mw = windowManager.mainWindow;
-      allAgents.forEach(agent => {
-        mw.webContents.send('agent-added', agent);
-      });
-      windowManager.resizeWindowForAgents(allAgents);
+      if (mw && !mw.isDestroyed()) {
+        allAgents.forEach(agent => {
+          mw.webContents.send('agent-added', agent);
+        });
+        windowManager.resizeWindowForAgents(allAgents);
+      }
     }
-
-    hookProcessor.flushPendingStarts();
   });
 
   app.on('activate', () => {
-    if (BrowserWindow.getAllWindows().length === 0) windowManager.createWindow();
+    if (BrowserWindow.getAllWindows().length === 0) windowManager.createDashboardWindow();
   });
 });
 

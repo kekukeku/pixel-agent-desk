@@ -390,6 +390,99 @@ function handleGetProfile(req, res) {
   res.end(JSON.stringify({ username }));
 }
 
+function isLocalRequest(req) {
+  const ip = req.socket ? req.socket.remoteAddress : '127.0.0.1';
+  return ip === '127.0.0.1' || ip === '::1' || ip === '::ffff:127.0.0.1';
+}
+
+function parseRequestBody(req) {
+  return new Promise((resolve, reject) => {
+    let body = '';
+    req.on('data', chunk => {
+      body += chunk.toString();
+    });
+    req.on('end', () => {
+      try {
+        resolve(JSON.parse(body || '{}'));
+      } catch (err) {
+        reject(err);
+      }
+    });
+    req.on('error', (err) => {
+      reject(err);
+    });
+  });
+}
+
+function handleGetNameMap(req, res) {
+  if (!isLocalRequest(req)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: API only accepts local requests' }));
+    return;
+  }
+
+  if (!agentManager) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Agent manager not available' }));
+    return;
+  }
+
+  const nameMap = agentManager.getNameMap();
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(nameMap));
+}
+
+function handlePutAgentName(req, res, url) {
+  if (!isLocalRequest(req)) {
+    res.writeHead(403, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Forbidden: API only accepts local requests' }));
+    return;
+  }
+
+  if (!agentManager) {
+    res.writeHead(503, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Agent manager not available' }));
+    return;
+  }
+
+  const parts = url.pathname.split('/');
+  const agentId = parts[3]; // /api/agents/:id/name
+  if (!agentId || agentId.trim() === '') {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'agentId must be a non-empty string' }));
+    return;
+  }
+
+  parseRequestBody(req)
+    .then((body) => {
+      const name = body.name;
+      if (typeof name !== 'string') {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'name must be a string' }));
+        return;
+      }
+
+      const trimmedName = name.trim();
+      if (trimmedName.length > 40) {
+        res.writeHead(400, { 'Content-Type': 'application/json' });
+        res.end(JSON.stringify({ error: 'name must not exceed 40 characters' }));
+        return;
+      }
+
+      const result = agentManager.updateAgentName(agentId, trimmedName);
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({
+        agentId,
+        displayName: result.displayName,
+        activeAgentUpdated: result.activeAgentUpdated
+      }));
+    })
+    .catch((err) => {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Invalid JSON body' }));
+    });
+}
+
 /** Route table: "METHOD /path" → handler */
 const apiRoutes = {
   'GET /api/events': handleSSE,
@@ -399,6 +492,7 @@ const apiRoutes = {
   'GET /api/heatmap': handleGetHeatmap,
   'GET /api/health': handleGetHealth,
   'GET /api/profile': handleGetProfile,
+  'GET /api/name-map': handleGetNameMap,
 };
 
 /**
@@ -406,7 +500,7 @@ const apiRoutes = {
  */
 function handleAPIRequest(req, res, url) {
   res.setHeader('Access-Control-Allow-Origin', '*');
-  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+  res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
   res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
 
   if (req.method === 'OPTIONS') {
@@ -426,6 +520,12 @@ function handleAPIRequest(req, res, url) {
   // Parameterized: GET /api/agents/:id
   if (url.pathname.startsWith('/api/agents/') && req.method === 'GET') {
     handleGetAgentById(req, res, url);
+    return;
+  }
+
+  // Parameterized: PUT /api/agents/:id/name
+  if (url.pathname.startsWith('/api/agents/') && url.pathname.endsWith('/name') && req.method === 'PUT') {
+    handlePutAgentName(req, res, url);
     return;
   }
 

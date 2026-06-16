@@ -19,11 +19,11 @@ Pixel Agent Desk is a standalone Electron app that listens to agent hook events 
 
 - **Pixel Avatars** — Each agent session gets a unique sprite character with state-driven animations.
 - **Virtual Office** — 2D pixel art office where characters walk between desks.
-- **Agent Desk Dashboard** — Web-monitor panel with real-time stats (accessible at `http://localhost:3000`).
+- **Agent Desk Dashboard** — Full UI desktop window and web-monitor panel with real-time stats (accessible at `http://localhost:3000`).
 - **Activity Heatmap** — GitHub-style contribution grid showing daily agent session frequency.
 - **Token Analytics** — Per-session and aggregate token usage, cost estimates, and model breakdowns.
-- **Terminal Focus** — Click any avatar to bring its terminal window to the foreground (macOS/Windows).
-- **PiP Mode** — Always-on-top floating window so your pixel office stays visible while you work.
+- **Terminal Focus** — Click any avatar card or sprite to bring its terminal window to the foreground (macOS/Windows).
+- **PiP Mode** — Optional always-on-top floating window (triggered from the dashboard) so your pixel office stays visible while you work.
 - **Auto Recovery** — Sessions are automatically restored on app restart.
 - **Multi-Provider Support** — Normalize pricing and context windows for OpenAI, Anthropic, Google Gemini, xAI Grok, and DeepSeek.
 
@@ -42,6 +42,7 @@ npm install
 npm start
 ```
 
+> `npm start` opens the full Pixel Agent Desk dashboard window directly. From the dashboard, you can optionally launch Picture-in-Picture (PiP) mode to keep a small always-on-top floating view of your pixel office.
 > If Claude mode is enabled, `npm install` will automatically attempt to register the required Claude Code hooks in `~/.claude/settings.json`.
 
 ---
@@ -127,7 +128,7 @@ The watcher posts character state updates to the desktop application and writes 
 
 | Trigger | File written | Condition |
 |---|---|---|
-| Task `DRAFT` / `IN_PROGRESS` | `REVIEWS/task_handoff_NNN.json` | `TASKS/task_NNN.md` status changes |
+| Task `IN_PROGRESS` | `REVIEWS/task_handoff_NNN.json` | `TASKS/task_NNN.md` status changes |
 | Registry `UNDER_REVIEW` | `REVIEWS/grok_handoff_NNN.json` | `AGENT_STATE.md` row transitions |
 
 > **Pipeline separation**: `task_handoff_NNN.json` is exclusively owned by the task-execution pipeline (Antigravity). The review-decision router (`route-review-decision.js`) produces `handoff_payload_NNN.json`. These files must never be conflated.
@@ -139,7 +140,7 @@ The watcher posts character state updates to the desktop application and writes 
 | `task_num` | string | 3-digit task number (e.g. `"008"`) |
 | `branch` | string | Branch associated with the task |
 | `project_root` | string | Absolute path of the watched repository |
-| `status` | string | `"DRAFT"` or `"IN_PROGRESS"` |
+| `status` | string | `"IN_PROGRESS"` |
 | `timestamp` | number | Float epoch timestamp |
 
 **`grok_handoff_NNN.json` payload fields:**

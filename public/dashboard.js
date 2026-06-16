@@ -3,8 +3,20 @@ const state = {
   agentHistory: new Map(),
   stats: { total: 0, active: 0, completed: 0, totalTokens: 0, totalCost: 0, errorCount: 0 },
   connected: false,
-  currentView: localStorage.getItem('mc-view') || 'office'
+  currentView: localStorage.getItem('mc-view') || 'office',
+  editingId: null,
+  editingValue: ''
 };
+
+function escapeHtml(str) {
+  if (!str) return '';
+  return str
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#039;');
+}
 
 const DOM = {
   statusIndicator: document.getElementById('statusIndicator'),
@@ -171,9 +183,19 @@ function updateAgentUI(ag) {
     timelineHtml = `<div class="mc-timeline">${segHtml}</div>`;
   }
 
+  const isEditing = state.editingId === ag.id;
+  const nameContent = isEditing
+    ? `<form class="mc-name-edit-form" data-id="${ag.id}" style="display: inline-flex; gap: 4px; align-items: center; margin: 0;">
+         <input type="text" class="mc-agent-name-input" value="${escapeHtml(state.editingValue)}" maxlength="40" style="font-size: 0.8rem; padding: 2px 4px; background: #161b22; border: 1px solid #30363d; color: #c9d1d9; border-radius: 4px; width: 100px;" autofocus />
+         <button type="submit" class="mc-name-btn save" title="Save" style="background: none; border: none; padding: 2px; cursor: pointer; color: #58a6ff; font-size: 0.9rem;">✓</button>
+         <button type="button" class="mc-name-btn cancel" title="Cancel" style="background: none; border: none; padding: 2px; cursor: pointer; color: #f85149; font-size: 0.9rem;">✗</button>
+       </form>`
+    : `<span class="mc-agent-name-text">${escapeHtml(ag.name || 'Agent')}</span>
+       <button class="mc-name-edit-btn" title="Edit Name" style="background: none; border: none; padding: 0 4px; cursor: pointer; color: #8b949e; font-size: 0.75rem; vertical-align: middle;">✎</button>`;
+
   const html = `
     <div class="mc-agent-header">
-      <div class="mc-agent-name">${ag.name || 'Agent'} ${typeHtml}</div>
+      <div class="mc-agent-name">${nameContent} ${typeHtml}</div>
       <div class="mc-agent-status ${stClass}">${stText}</div>
     </div>
     <div class="mc-agent-activity">CMD> ${actText}</div>
@@ -189,6 +211,15 @@ function updateAgentUI(ag) {
     </div>
   `;
 
+  let activeElement = document.activeElement;
+  let selectionStart = null;
+  let selectionEnd = null;
+  const isInputActive = activeElement && activeElement.classList.contains('mc-agent-name-input') && activeElement.closest(`[data-id="${ag.id}"]`);
+  if (isInputActive) {
+    selectionStart = activeElement.selectionStart;
+    selectionEnd = activeElement.selectionEnd;
+  }
+
   if (existing) {
     existing.innerHTML = html;
   } else {
@@ -197,6 +228,17 @@ function updateAgentUI(ag) {
     div.dataset.id = ag.id;
     div.innerHTML = html;
     DOM.agentPanel.appendChild(div);
+  }
+
+  if (isInputActive) {
+    const container = existing || DOM.agentPanel.querySelector(`[data-id="${ag.id}"]`);
+    if (container) {
+      const newInput = container.querySelector('.mc-agent-name-input');
+      if (newInput) {
+        newInput.focus();
+        newInput.setSelectionRange(selectionStart, selectionEnd);
+      }
+    }
   }
 }
 
@@ -605,6 +647,7 @@ document.querySelectorAll('.nav-item').forEach(b => {
 });
 
 // ─── PiP TOGGLE & STATE ───
+// PiP mode is optional and user-triggered from the main dashboard window.
 (function () {
   var pipBtn = document.getElementById('pipToggleBtn');
   var pipPlaceholder = document.getElementById('pipPlaceholder');
@@ -641,6 +684,110 @@ document.querySelectorAll('.nav-item').forEach(b => {
   }
 })();
 
+function setupNameEditHandlers() {
+  if (!DOM.agentPanel) return;
+
+  DOM.agentPanel.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('.mc-name-edit-btn');
+    if (editBtn) {
+      const card = editBtn.closest('.mc-agent-card');
+      const id = card.dataset.id;
+      const ag = state.agents.get(id);
+      if (ag) {
+        state.editingId = id;
+        state.editingValue = ag.name || '';
+        updateAgentUI(ag);
+        const input = card.querySelector('.mc-agent-name-input');
+        if (input) {
+          input.focus();
+          input.select();
+        }
+      }
+      return;
+    }
+
+    const cancelBtn = e.target.closest('.mc-name-btn.cancel');
+    if (cancelBtn) {
+      const card = cancelBtn.closest('.mc-agent-card');
+      const id = card.dataset.id;
+      state.editingId = null;
+      state.editingValue = '';
+      const ag = state.agents.get(id);
+      if (ag) {
+        updateAgentUI(ag);
+      }
+    }
+  });
+
+  DOM.agentPanel.addEventListener('input', (e) => {
+    if (e.target.classList.contains('mc-agent-name-input')) {
+      state.editingValue = e.target.value;
+    }
+  });
+
+  DOM.agentPanel.addEventListener('keydown', (e) => {
+    if (e.target.classList.contains('mc-agent-name-input') && e.key === 'Escape') {
+      const card = e.target.closest('.mc-agent-card');
+      const id = card.dataset.id;
+      state.editingId = null;
+      state.editingValue = '';
+      const ag = state.agents.get(id);
+      if (ag) {
+        updateAgentUI(ag);
+      }
+    }
+  });
+
+  DOM.agentPanel.addEventListener('submit', async (e) => {
+    const form = e.target.closest('.mc-name-edit-form');
+    if (form) {
+      e.preventDefault();
+      const id = form.dataset.id;
+      const input = form.querySelector('.mc-agent-name-input');
+      const newName = input.value.trim();
+
+      if (newName.length > 40) {
+        alert('Name must not exceed 40 characters.');
+        return;
+      }
+
+      try {
+        const res = await fetch(`/api/agents/${id}/name`, {
+          method: 'PUT',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({ name: newName })
+        });
+        if (!res.ok) {
+          const err = await res.json();
+          alert(`Error: ${err.error || 'Failed to update name'}`);
+          return;
+        }
+        const data = await res.json();
+        state.editingId = null;
+        state.editingValue = '';
+
+        const ag = state.agents.get(id);
+        if (ag) {
+          ag.name = data.displayName;
+          updateAgentUI(ag);
+          if (typeof officeCharacters !== 'undefined') {
+            const char = officeCharacters.characters.get(id);
+            if (char) {
+              char.role = data.displayName;
+              char.metadata.name = data.displayName;
+            }
+          }
+        }
+      } catch (err) {
+        console.error('Failed to update agent name:', err);
+        alert('Failed to save name.');
+      }
+    }
+  });
+}
+
 async function loadUsername() {
   try {
     const res = await fetch('/api/profile');
@@ -668,6 +815,7 @@ function initApp() {
   const tgtEl = document.getElementById(`${target}View`);
   if (tgtEl) tgtEl.classList.add('active');
 
+  setupNameEditHandlers();
   loadUsername();
   connectSSE();
   if (target === 'heatmap') renderHeatmapView();

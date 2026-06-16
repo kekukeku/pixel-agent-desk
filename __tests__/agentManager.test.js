@@ -315,4 +315,68 @@ describe('AgentManager', () => {
       expect(stats.byState.Thinking).toBe(0);
     });
   });
+
+  describe('Name map and agent naming', () => {
+    const os = require('os');
+    const fs = require('fs');
+    const path = require('path');
+
+    const originalHomedir = os.homedir;
+    const testHomedir = path.join(__dirname, 'temp_home');
+
+    beforeAll(() => {
+      os.homedir = () => testHomedir;
+    });
+
+    afterAll(() => {
+      os.homedir = originalHomedir;
+      if (fs.existsSync(testHomedir)) {
+        fs.rmSync(testHomedir, { recursive: true, force: true });
+      }
+    });
+
+    beforeEach(() => {
+      if (fs.existsSync(testHomedir)) {
+        fs.rmSync(testHomedir, { recursive: true, force: true });
+      }
+    });
+
+    test('updateAgentName saves name to name-map.json and updates in-memory agent', () => {
+      manager.updateAgent({ sessionId: 'agent-x', slug: 'agent-x-slug', state: 'Working' });
+      
+      const res = manager.updateAgentName('agent-x', 'Custom Name X');
+      expect(res.displayName).toBe('Custom Name X');
+      expect(res.activeAgentUpdated).toBe(true);
+
+      const agent = manager.getAgent('agent-x');
+      expect(agent.displayName).toBe('Custom Name X');
+
+      const mapPath = path.join(testHomedir, '.pixel-agent-desk', 'name-map.json');
+      expect(fs.existsSync(mapPath)).toBe(true);
+      const content = JSON.parse(fs.readFileSync(mapPath, 'utf-8'));
+      expect(content['agent-x']).toBe('Custom Name X');
+    });
+
+    test('updateAgentName deletes key from name-map.json when name is empty', () => {
+      manager.updateAgent({ sessionId: 'agent-y', slug: 'agent-y-slug', state: 'Working' });
+      
+      manager.updateAgentName('agent-y', 'Custom Y');
+      
+      const res = manager.updateAgentName('agent-y', '');
+      expect(res.displayName).toBe('Agent Y Slug');
+
+      const agent = manager.getAgent('agent-y');
+      expect(agent.displayName).toBe('Agent Y Slug');
+
+      const mapPath = path.join(testHomedir, '.pixel-agent-desk', 'name-map.json');
+      const content = JSON.parse(fs.readFileSync(mapPath, 'utf-8'));
+      expect(content['agent-y']).toBeUndefined();
+    });
+
+    test('getNameMap returns name mapping', () => {
+      manager.updateAgentName('agent-z', 'Custom Z');
+      const map = manager.getNameMap();
+      expect(map['agent-z']).toBe('Custom Z');
+    });
+  });
 });

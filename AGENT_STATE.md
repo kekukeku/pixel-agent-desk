@@ -28,6 +28,8 @@ To prevent state drift between different folders and GitHub PR statuses, this re
 | **TASK-006** | `MERGED` | [task/task_006_pixel_agent_desk_watcher](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_006.md) | 2026-06-16 |
 | **TASK-007** | `MERGED` | [task/task_007_watcher_onboarding_docs](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_007.md) | 2026-06-16 |
 | **TASK-008** | `MERGED` | [task/task_008_watcher_handoff_consumers](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_008.md) | 2026-06-16 |
+| **TASK-009** | `MERGED` | [task/task_009_editable_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_009.md) | 2026-06-16 |
+| **TASK-010** | `UNDER_REVIEW` | [task/task_010_launch_dashboard_directly](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_010.md) | 2026-06-16 |
 
 ---
 
@@ -61,8 +63,8 @@ stateDiagram-v2
 
 | State | Target State | Triggering Event | Description / Action |
 | :--- | :--- | :--- | :--- |
-| **`DRAFT`** | `IN_PROGRESS` | Developer starts work | Task is added to the registry and a feature branch is created. |
-| **`IN_PROGRESS`** | `UNDER_REVIEW` | PR created | A Pull Request is opened on GitHub, firing the Review Dispatcher. |
+| **`DRAFT`** | `IN_PROGRESS` | Planner or watcher releases task for execution | Task is ready for Antigravity. Only this transition should trigger executor handoff. |
+| **`IN_PROGRESS`** | `UNDER_REVIEW` | Executor finishes implementation | Antigravity marks the task ready for Grok Build review. |
 | **`UNDER_REVIEW`** | `CHANGES_REQUESTED` | Grok Build outputs `REQUEST_CHANGES` | Feedback is written to `REVIEWS/review_NNN.md` and check fails. |
 | **`CHANGES_REQUESTED`** | `IN_PROGRESS` | Antigravity resumes editing | Changes are made on the branch. |
 | **`UNDER_REVIEW`** | `APPROVED` | Grok Build outputs `APPROVE` | Review check passes, unlocking the physical merge gate on GitHub. |
@@ -73,11 +75,12 @@ stateDiagram-v2
 
 ## 4. Autonomy Loop & Event Dispatching
 
-1. **Tasking**: Codex (Planner) adds a task in state `DRAFT` (or `TODO`) to the registry and writes the task specification.
-2. **Coding**: Antigravity (Executor) picks up the draft task, transitions it to `IN_PROGRESS` in the Central State Registry, and edits the code on a feature branch.
-3. **Dispatching**: Antigravity opens a PR. A GitHub Actions workflow intercepts the PR hook and dispatches the code diff + task spec to the Grok Build runner.
-4. **Signaling**: Grok Build outputs its review report (`REVIEWS/review_NNN.md`) to the branch.
-5. **Reconciliation**:
+1. **Tasking**: Codex (Planner) adds a task in state `DRAFT` to the registry and writes the task specification. `DRAFT` is planning-only and must not trigger Antigravity.
+2. **Execution Dispatch**: When the planner or watcher is ready to hand the task to Antigravity, the task moves to `IN_PROGRESS`. The watcher only dispatches executor work on `IN_PROGRESS`, not on `DRAFT`.
+3. **Coding**: Antigravity (Executor) edits the code on the task branch. When implementation and self-checks are complete, Antigravity must move both `TASKS/task_NNN.md` and `AGENT_STATE.md` to `UNDER_REVIEW`. It must not use `COMPLETED`.
+4. **Review Dispatching**: The watcher sees `AGENT_STATE.md` transition to `UNDER_REVIEW`, generates the review request/diff payload, and dispatches Grok Build.
+5. **Signaling**: Grok Build outputs its review report (`REVIEWS/review_NNN.md`) to the branch.
+6. **Reconciliation**:
    - If the signal is `APPROVE`, the branch status check turns green, and Antigravity merges the PR.
    - If the signal is `REQUEST_CHANGES`, the status check remains red, and the task transitions to `CHANGES_REQUESTED` (and subsequently back to `IN_PROGRESS` once modification begins).
    - If `REJECT`, the PR is aborted and marked `REJECTED`.

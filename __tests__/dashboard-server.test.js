@@ -383,7 +383,7 @@ describe('dashboard-server', () => {
       handler(req, res);
 
       expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Allow-Origin', '*');
-      expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Allow-Methods', 'GET, POST, DELETE, OPTIONS');
+      expect(res.setHeader).toHaveBeenCalledWith('Access-Control-Allow-Methods', 'GET, POST, PUT, DELETE, OPTIONS');
       expect(res.writeHead).toHaveBeenCalledWith(200);
     });
   });
@@ -646,6 +646,88 @@ describe('dashboard-server', () => {
 
       req.emit('close');
       jest.useRealTimers();
+    });
+  });
+
+  describe('Name mapping API routes', () => {
+    let mockAgentManager;
+
+    beforeEach(() => {
+      mockAgentManager = createMockAgentManager();
+      mockAgentManager.getNameMap = jest.fn(() => ({ 'session-1': 'Agent Custom Name' }));
+      mockAgentManager.updateAgentName = jest.fn((id, name) => ({
+        activeAgentUpdated: true,
+        displayName: name || 'Agent'
+      }));
+      dashboardServer.setAgentManager(mockAgentManager);
+    });
+
+    test('GET /api/name-map returns the name map JSON for local requests', () => {
+      const { req, res } = createMockReqRes('GET', '/api/name-map');
+      req.socket = { remoteAddress: '127.0.0.1' };
+
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      expect(res.end).toHaveBeenCalledWith(JSON.stringify({ 'session-1': 'Agent Custom Name' }));
+    });
+
+    test('GET /api/name-map blocks non-local requests', () => {
+      const { req, res } = createMockReqRes('GET', '/api/name-map');
+      req.socket = { remoteAddress: '192.168.1.100' };
+
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(403, { 'Content-Type': 'application/json' });
+      expect(res.end).toHaveBeenCalledWith(expect.stringContaining('Forbidden'));
+    });
+
+    test('PUT /api/agents/:id/name updates name for local requests', (done) => {
+      const { req, res } = createMockReqRes('PUT', '/api/agents/session-1/name');
+      req.socket = { remoteAddress: '127.0.0.1' };
+
+      handler(req, res);
+
+      req.emit('data', Buffer.from(JSON.stringify({ name: 'New Custom Name' })));
+      req.emit('end');
+
+      setImmediate(() => {
+        expect(mockAgentManager.updateAgentName).toHaveBeenCalledWith('session-1', 'New Custom Name');
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        expect(res.end).toHaveBeenCalledWith(JSON.stringify({
+          agentId: 'session-1',
+          displayName: 'New Custom Name',
+          activeAgentUpdated: true
+        }));
+        done();
+      });
+    });
+
+    test('PUT /api/agents/:id/name rejects names longer than 40 characters', (done) => {
+      const { req, res } = createMockReqRes('PUT', '/api/agents/session-1/name');
+      req.socket = { remoteAddress: '127.0.0.1' };
+
+      handler(req, res);
+
+      const longName = 'a'.repeat(41);
+      req.emit('data', Buffer.from(JSON.stringify({ name: longName })));
+      req.emit('end');
+
+      setImmediate(() => {
+        expect(res.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+        expect(res.end).toHaveBeenCalledWith(expect.stringContaining('name must not exceed 40 characters'));
+        done();
+      });
+    });
+
+    test('PUT /api/agents/:id/name blocks non-local requests', () => {
+      const { req, res } = createMockReqRes('PUT', '/api/agents/session-1/name');
+      req.socket = { remoteAddress: '192.168.1.100' };
+
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(403, { 'Content-Type': 'application/json' });
+      expect(res.end).toHaveBeenCalledWith(expect.stringContaining('Forbidden'));
     });
   });
 });

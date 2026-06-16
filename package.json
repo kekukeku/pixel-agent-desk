@@ -11,6 +11,8 @@
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "dashboard": "node src/dashboard-server.js",
+    "reviewer-adapter": "node agent-runner/reviewer-adapter-server.js",
+    "workflow": "bash scripts/start_pixel_workflow.sh",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"__tests__/**/*.js\"",

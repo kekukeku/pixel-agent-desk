@@ -471,7 +471,7 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
 
     for task_num, info in scan["tasks"].items():
         status = info.get("status")
-        if status in ["DRAFT", "IN_PROGRESS"]:
+        if status == "IN_PROGRESS":
             key = make_dispatch_key(task_num, "antigravity", "task_status", status)
             transport = "command" if anti_cmd else ("webhook" if anti_web else "none")
             dispatches.append({
@@ -781,7 +781,7 @@ def main():
             branch = info["branch"] or f"task/task_{task_num}"
             antigravity_info = state.agents["antigravity"]
 
-            if status in ["DRAFT", "IN_PROGRESS"]:
+            if status == "IN_PROGRESS":
                 post_agent_event(
                     "agent.working",
                     antigravity_info["id"],

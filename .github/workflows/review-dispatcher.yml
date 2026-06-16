@@ -1,0 +1,67 @@
+name: Review Dispatcher
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review, labeled]
+    branches: [master, main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  dispatch:
+    if: >
+      github.event.action != 'labeled' ||
+      github.event.label.name == 'needs-review'
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout PR head
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22.x
+
+      - name: Resolve task
+        id: task
+        env:
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_BODY: ${{ github.event.pull_request.body }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: node agent-runner/resolve-task.js --require --github-output
+
+      - name: Generate PR diff
+        run: |
+          mkdir -p REVIEWS
+          git diff --no-color "${{ github.event.pull_request.base.sha }}...${{ github.event.pull_request.head.sha }}" > "REVIEWS/review_diff_${{ steps.task.outputs.task_num }}.patch"
+
+      - name: Generate review request
+        run: node agent-runner/trigger-review.js "${{ steps.task.outputs.task_num }}"
+
+      - name: Dispatch reviewer payload
+        env:
+          REVIEWER_ENDPOINT: ${{ secrets.REVIEWER_ENDPOINT }}
+          REVIEWER_TOKEN: ${{ secrets.REVIEWER_TOKEN }}
+          GROK_REVIEW_ENDPOINT: ${{ secrets.GROK_REVIEW_ENDPOINT }}
+          GROK_REVIEW_TOKEN: ${{ secrets.GROK_REVIEW_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          PR_TITLE: ${{ github.event.pull_request.title }}
+          PR_HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
+          PR_BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: node agent-runner/dispatch-review.js "${{ steps.task.outputs.task_num }}"
+
+      - name: Upload reviewer dispatch payload
+        uses: actions/upload-artifact@v4
+        with:
+          name: reviewer-dispatch-${{ steps.task.outputs.task_id }}
+          path: |
+            REVIEWS/review_request_${{ steps.task.outputs.task_num }}.md
+            REVIEWS/review_diff_${{ steps.task.outputs.task_num }}.patch
+            REVIEWS/reviewer_payload_${{ steps.task.outputs.task_num }}.json

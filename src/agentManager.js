@@ -238,6 +238,63 @@ class AgentManager extends EventEmitter {
   }
 
   /**
+   * Get name map mapping
+   */
+  getNameMap() {
+    return getNameMap();
+  }
+
+  /**
+   * Update or clear custom name for an agent
+   */
+  updateAgentName(agentId, name) {
+    const mapPath = path.join(os.homedir(), '.pixel-agent-desk', 'name-map.json');
+    const mapDir = path.dirname(mapPath);
+
+    if (!fs.existsSync(mapDir)) {
+      fs.mkdirSync(mapDir, { recursive: true });
+    }
+
+    let nameMap = {};
+    try {
+      if (fs.existsSync(mapPath)) {
+        nameMap = JSON.parse(fs.readFileSync(mapPath, 'utf-8'));
+      }
+    } catch (e) {
+      console.error('[AgentManager] Error reading name-map.json:', e.message);
+    }
+
+    const trimmedName = typeof name === 'string' ? name.trim() : '';
+    if (trimmedName) {
+      nameMap[agentId] = trimmedName;
+    } else {
+      delete nameMap[agentId];
+    }
+
+    const tempPath = mapPath + '.tmp';
+    try {
+      fs.writeFileSync(tempPath, JSON.stringify(nameMap, null, 2), 'utf-8');
+      fs.renameSync(tempPath, mapPath);
+    } catch (e) {
+      console.error('[AgentManager] Error writing name-map.json atomically:', e.message);
+      fs.writeFileSync(mapPath, JSON.stringify(nameMap, null, 2), 'utf-8');
+    }
+
+    const agent = this.agents.get(agentId);
+    let activeAgentUpdated = false;
+    if (agent) {
+      agent.displayName = this.formatDisplayName(agent.slug, agent.projectPath, agentId);
+      this.emit('agent-updated', this.getAgentWithEffectiveState(agentId));
+      activeAgentUpdated = true;
+    }
+
+    return {
+      activeAgentUpdated,
+      displayName: this.formatDisplayName(agent ? agent.slug : null, agent ? agent.projectPath : null, agentId)
+    };
+  }
+
+  /**
    * Determine display name
    * 1. ~/.pixel-agent-desk/name-map.json (session_id -> name mapping)
    * 2. slug (e.g., "toasty-sparking-lecun" → "Toasty Sparking Lecun")
