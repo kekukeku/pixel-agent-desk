@@ -1,7 +1,14 @@
-const { execSync } = require('child_process');
+const child_process = require('child_process');
+const execSync = (cmd, options = {}) => {
+  options.env = { ...process.env, ...options.env };
+  return child_process.execSync(cmd, options);
+};
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
+
+// Prevent global ~/.pixel-agent-desk/watcher.json from polluting tests
+process.env.PIXEL_AGENT_DESK_WATCHER_CONFIG_PATH = path.join(os.tmpdir(), 'non_existent_watcher_config.json');
 
 function createTempRepo() {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-watcher-test-'));
