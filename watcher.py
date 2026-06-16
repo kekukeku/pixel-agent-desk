@@ -34,11 +34,15 @@ class WatcherState:
         self.config = self.load_config()
         self.mtimes = {}
         self.registry_state = {}
+        self.dispatched_keys = set()
         self.last_processed = {}  # For debouncing: path -> last_time
 
     def load_config(self):
         config_path = os.path.expanduser("~/.pixel-agent-desk/watcher.json")
         defaults = {
+            "execution_mode": "visual-only",
+            "command_timeout_seconds": 600,
+            "output_capture_bytes": 8192,
             "antigravity": {
                 "command": None,
                 "webhook": None
@@ -56,9 +60,16 @@ class WatcherState:
                     # Merge configurations
                     for key in ["antigravity", "grok"]:
                         if key in user_config:
-                            defaults[key].update(user_config[key])
-                    if "keep_alive_seconds" in user_config:
-                        defaults["keep_alive_seconds"] = user_config["keep_alive_seconds"]
+                            if user_config[key] is not None:
+                                defaults[key].update(user_config[key])
+                    for key in ["command_timeout_seconds", "output_capture_bytes", "keep_alive_seconds"]:
+                        if key in user_config:
+                            try:
+                                defaults[key] = int(user_config[key])
+                            except ValueError:
+                                defaults[key] = user_config[key]
+                    if "execution_mode" in user_config:
+                        defaults["execution_mode"] = user_config["execution_mode"]
                     # Configurable agents (B2)
                     if "agents" in user_config:
                         for role in ["codex", "antigravity", "grok-build"]:
@@ -67,7 +78,41 @@ class WatcherState:
             except Exception as e:
                 print(f"Warning: Failed to parse watcher.json: {e}", file=sys.stderr)
 
-        # Allow env override for keep-alive
+        # Allow env overrides
+        env_mode = os.environ.get("PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE")
+        if env_mode:
+            defaults["execution_mode"] = env_mode
+
+        env_timeout = os.environ.get("PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT_SECONDS")
+        if env_timeout:
+            try:
+                defaults["command_timeout_seconds"] = int(env_timeout)
+            except ValueError:
+                pass
+
+        env_capture = os.environ.get("PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES")
+        if env_capture:
+            try:
+                defaults["output_capture_bytes"] = int(env_capture)
+            except ValueError:
+                pass
+
+        env_anti_cmd = os.environ.get("PIXEL_AGENT_DESK_ANTIGRAVITY_COMMAND")
+        if env_anti_cmd:
+            defaults["antigravity"]["command"] = env_anti_cmd
+
+        env_anti_web = os.environ.get("PIXEL_AGENT_DESK_ANTIGRAVITY_WEBHOOK")
+        if env_anti_web:
+            defaults["antigravity"]["webhook"] = env_anti_web
+
+        env_grok_cmd = os.environ.get("PIXEL_AGENT_DESK_GROK_COMMAND")
+        if env_grok_cmd:
+            defaults["grok"]["command"] = env_grok_cmd
+
+        env_grok_web = os.environ.get("PIXEL_AGENT_DESK_GROK_WEBHOOK")
+        if env_grok_web:
+            defaults["grok"]["webhook"] = env_grok_web
+
         env_keep_alive = os.environ.get("PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE")
         if env_keep_alive:
             try:
@@ -185,28 +230,319 @@ def extract_task_num(file_path):
         return match.group(1)
     return None
 
-def run_command_in_shell(command, task_num, project_root):
-    if not command:
-        return
-    formatted_cmd = command.replace("{task_num}", task_num)
-    # Ensure env path contains node
-    env = os.environ.copy()
-    if "~/.local/node/bin" not in env.get("PATH", ""):
-        env["PATH"] = os.path.expanduser("~/.local/node/bin") + os.pathsep + env.get("PATH", "")
+# ── Dispatch Engine ────────────────────────────────────────────────────────────
 
+def make_dispatch_key(task_num, target, trigger, state_or_decision):
+    """Build an idempotency key. Format: {task_num}:{target}:{trigger}:{state_or_decision}"""
+    return f"{task_num}:{target}:{trigger}:{state_or_decision}"
+
+def _build_node_env():
+    """Return os.environ copy with ~/.local/node/bin prepended when missing."""
+    env = os.environ.copy()
+    node_bin = os.path.expanduser("~/.local/node/bin")
+    if node_bin not in env.get("PATH", ""):
+        env["PATH"] = node_bin + os.pathsep + env.get("PATH", "")
+    return env
+
+def _write_dispatch_result(project_root, result):
+    """Write target-specific dispatch result file. Errors are printed to stderr."""
+    task_num = result["task_num"]
+    target = result["target"]
+    path = os.path.join(project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
     try:
-        subprocess.Popen(
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(result, f, indent=2)
+    except Exception as e:
+        print(f"Warning: Could not write dispatch result to {path}: {e}", file=sys.stderr)
+
+def _run_command_worker(formatted_cmd, timeout, capture_bytes, project_root, result_template):
+    """Background thread: run command, collect result, write dispatch_result file."""
+    env = _build_node_env()
+    result = dict(result_template)
+    result["transport"] = "command"
+    result["started_at"] = time.time()
+    timed_out = False
+    try:
+        proc = subprocess.Popen(
             formatted_cmd,
             shell=True,
             cwd=project_root,
             env=env,
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
-    except Exception as e:
-        print(f"Error executing command '{formatted_cmd}': {e}", file=sys.stderr)
+        try:
+            stdout_b, stderr_b = proc.communicate(timeout=timeout)
+            returncode = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            stdout_b, stderr_b = proc.communicate()
+            returncode = -1
+            timed_out = True
 
-# Global Keep Alive Thread Target
+        result["success"] = (returncode == 0) and not timed_out
+        result["returncode"] = returncode
+        result["timed_out"] = timed_out
+        result["stdout_excerpt"] = stdout_b[:capture_bytes].decode("utf-8", errors="replace")
+        result["stderr_excerpt"] = stderr_b[:capture_bytes].decode("utf-8", errors="replace")
+        result["error"] = "Command timed out" if timed_out else None
+    except Exception as e:
+        result["success"] = False
+        result["returncode"] = -1
+        result["timed_out"] = False
+        result["stdout_excerpt"] = ""
+        result["stderr_excerpt"] = ""
+        result["error"] = str(e)
+    result["finished_at"] = time.time()
+    if not result["success"]:
+        print(
+            f"Error: Active dispatch for TASK-{result['task_num']} ({result['target']}) failed."
+            f" exit={result['returncode']} timed_out={result['timed_out']} err={result['error']}",
+            file=sys.stderr
+        )
+    _write_dispatch_result(project_root, result)
+
+def _run_webhook_worker(url, payload, capture_bytes, project_root, result_template):
+    """Background thread: POST webhook, collect result, write dispatch_result file."""
+    result = dict(result_template)
+    result["transport"] = "webhook"
+    result["started_at"] = time.time()
+    try:
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            url, data=data, headers={"Content-Type": "application/json"}
+        )
+        with urllib.request.urlopen(req, timeout=30) as resp:
+            body = resp.read(capture_bytes)
+            result["success"] = True
+            result["http_status"] = resp.status
+            result["stdout_excerpt"] = body.decode("utf-8", errors="replace")
+            result["stderr_excerpt"] = ""
+            result["error"] = None
+    except Exception as e:
+        result["success"] = False
+        result["http_status"] = getattr(e, "code", None)
+        result["stdout_excerpt"] = ""
+        result["stderr_excerpt"] = ""
+        result["error"] = str(e)
+        print(
+            f"Error: Active webhook dispatch for TASK-{result['task_num']} ({result['target']}) failed: {e}",
+            file=sys.stderr
+        )
+    result["finished_at"] = time.time()
+    _write_dispatch_result(project_root, result)
+
+def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payload):
+    """
+    Central dispatcher. Writes fallback payload, enforces idempotency,
+    and in active mode fires an async command or webhook worker.
+
+    target: 'antigravity' | 'grok'
+    trigger: 'task_status' | 'registry_state' | 'review_decision'
+    state_or_decision: e.g. 'IN_PROGRESS', 'UNDER_REVIEW', 'APPROVE'
+    payload: dict to send as handoff body
+    """
+    dispatch_key = make_dispatch_key(task_num, target, trigger, state_or_decision)
+
+    # Write fallback payload file — but ONLY for the task-execution and registry pipelines.
+    # review_decision dispatches must NOT write task_handoff_NNN.json: that file is exclusively
+    # owned by the task-status pipeline. The review router writes handoff_payload_NNN.json via
+    # route-review-decision.js; the dispatch_result_* file (written by the worker) is the audit
+    # artifact for the router path.
+    if trigger != "review_decision":
+        if target == "antigravity":
+            fallback_path = os.path.join(state.project_root, "REVIEWS", f"task_handoff_{task_num}.json")
+        else:
+            fallback_path = os.path.join(state.project_root, "REVIEWS", f"grok_handoff_{task_num}.json")
+        try:
+            os.makedirs(os.path.dirname(fallback_path), exist_ok=True)
+            with open(fallback_path, "w", encoding="utf-8") as hf:
+                json.dump(payload, hf, indent=2)
+        except Exception:
+            pass
+    else:
+        # For review_decision: derive fallback_path only for the warning message below
+        fallback_path = os.path.join(state.project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
+
+    # Idempotency: skip if already dispatched in this session
+    if dispatch_key in state.dispatched_keys:
+        return
+    state.dispatched_keys.add(dispatch_key)
+
+    execution_mode = state.config.get("execution_mode", "visual-only")
+    target_cfg = state.config.get(target, {})
+    cmd = target_cfg.get("command")
+    webhook = target_cfg.get("webhook")
+    timeout = state.config.get("command_timeout_seconds", 600)
+    capture = state.config.get("output_capture_bytes", 8192)
+
+    if execution_mode != "active":
+        # visual-only: warn and exit
+        print(
+            f"Warning: visual-only mode — handoff payload written to "
+            f"REVIEWS/{os.path.basename(fallback_path)}, no command/webhook fired.",
+            file=sys.stderr
+        )
+        return
+
+    # active mode: consumer must be configured
+    if not cmd and not webhook:
+        # Emit configuration error and write a failed dispatch result
+        err_msg = (
+            f"Error: execution_mode=active but no command/webhook configured for "
+            f"'{target}'. Handoff payload is in REVIEWS/{os.path.basename(fallback_path)}"
+        )
+        print(err_msg, file=sys.stderr)
+        result = {
+            "task_num": task_num,
+            "target": target,
+            "trigger": trigger,
+            "state": state_or_decision,
+            "dispatch_key": dispatch_key,
+            "transport": None,
+            "success": False,
+            "returncode": None,
+            "http_status": None,
+            "timed_out": False,
+            "stdout_excerpt": "",
+            "stderr_excerpt": "",
+            "error": err_msg,
+            "started_at": time.time(),
+            "finished_at": time.time(),
+        }
+        _write_dispatch_result(state.project_root, result)
+        return
+
+    # Build result template (worker will fill in runtime fields)
+    result_template = {
+        "task_num": task_num,
+        "target": target,
+        "trigger": trigger,
+        "state": state_or_decision,
+        "dispatch_key": dispatch_key,
+        "transport": None,
+        "success": False,
+        "returncode": None,
+        "http_status": None,
+        "timed_out": False,
+        "stdout_excerpt": "",
+        "stderr_excerpt": "",
+        "error": None,
+        "started_at": None,
+        "finished_at": None,
+    }
+
+    if cmd:
+        formatted_cmd = cmd.replace("{task_num}", task_num)
+        t = Thread(
+            target=_run_command_worker,
+            args=(formatted_cmd, timeout, capture, state.project_root, result_template),
+            daemon=True
+        )
+        t.start()
+    else:
+        t = Thread(
+            target=_run_webhook_worker,
+            args=(webhook, payload, capture, state.project_root, result_template),
+            daemon=True
+        )
+        t.start()
+
+# ── Simulation (--simulate-handoff) ────────────────────────────────────────────
+
+def perform_simulate_handoff(project_root, execution_mode="visual-only", config=None):
+    """
+    Pure, side-effect-free function: parse repository state and return the list
+    of dispatches that *would* be fired, including their idempotency keys,
+    transport (command/webhook/none), and payload shape.
+    """
+    if config is None:
+        config = {}
+    anti_cmd = (config.get("antigravity") or {}).get("command")
+    anti_web = (config.get("antigravity") or {}).get("webhook")
+    grok_cmd = (config.get("grok") or {}).get("command", "node agent-runner/trigger-review.js {task_num}")
+    grok_web = (config.get("grok") or {}).get("webhook")
+
+    scan = perform_scan(project_root)
+    dispatches = []
+
+    for task_num, info in scan["tasks"].items():
+        status = info.get("status")
+        if status in ["DRAFT", "IN_PROGRESS"]:
+            key = make_dispatch_key(task_num, "antigravity", "task_status", status)
+            transport = "command" if anti_cmd else ("webhook" if anti_web else "none")
+            dispatches.append({
+                "dispatch_key": key,
+                "task_num": task_num,
+                "target": "antigravity",
+                "trigger": "task_status",
+                "state": status,
+                "transport": transport,
+                "would_error_active": execution_mode == "active" and transport == "none",
+                "payload_shape": {
+                    "task_num": task_num,
+                    "branch": info.get("branch"),
+                    "project_root": project_root,
+                    "status": status,
+                    "timestamp": "<float>"
+                }
+            })
+
+    for task_num, reg_state in scan["registry"].items():
+        if reg_state == "UNDER_REVIEW":
+            key = make_dispatch_key(task_num, "grok", "registry_state", "UNDER_REVIEW")
+            transport = "command" if grok_cmd else ("webhook" if grok_web else "none")
+            dispatches.append({
+                "dispatch_key": key,
+                "task_num": task_num,
+                "target": "grok",
+                "trigger": "registry_state",
+                "state": "UNDER_REVIEW",
+                "transport": transport,
+                "would_error_active": False,
+                "payload_shape": {
+                    "task_num": task_num,
+                    "project_root": project_root,
+                    "status": "UNDER_REVIEW",
+                    "timestamp": "<float>"
+                }
+            })
+
+    return dispatches
+
+def perform_dispatch_one(project_root, target, task_num, trigger, state_or_decision,
+                         payload, timeout_wait=15):
+    """
+    CI test helper: create a minimal WatcherState from project_root config,
+    call dispatch_handoff() once, then block until the background worker
+    thread completes (up to timeout_wait seconds).
+
+    Returns the parsed dispatch_result_NNN_target.json dict, or raises
+    RuntimeError if the result file does not appear within timeout_wait seconds.
+
+    This function is called by --dispatch-test CLI flag and must not be used
+    from within the watchdog event loop.
+    """
+    state = WatcherState(project_root)
+    dispatch_handoff(state, target, task_num, trigger, state_or_decision, payload)
+    result_path = os.path.join(
+        project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json"
+    )
+    deadline = time.time() + timeout_wait
+    while time.time() < deadline:
+        if os.path.exists(result_path):
+            try:
+                with open(result_path, "r", encoding="utf-8") as f:
+                    return json.load(f)
+            except Exception:
+                pass
+        time.sleep(0.1)
+    raise RuntimeError(
+        f"dispatch_result not written within {timeout_wait}s: {result_path}"
+    )
+
+
 def keep_alive_loop(state):
     while True:
         interval = state.config.get("keep_alive_seconds", DEFAULT_KEEP_ALIVE_SECONDS)
@@ -300,6 +636,8 @@ def main():
     # Parse CLI Arguments
     project_root = None
     parse_only = False
+    simulate_handoff = False
+    dispatch_test_args = None  # Set if --dispatch-test JSON arg is present
 
     args = sys.argv[1:]
     i = 0
@@ -311,6 +649,18 @@ def main():
         elif arg == "--parse-only":
             parse_only = True
             i += 1
+        elif arg == "--simulate-handoff":
+            simulate_handoff = True
+            i += 1
+        elif arg == "--dispatch-test" and i + 1 < len(args):
+            # Format: --dispatch-test '<json_string>'
+            # JSON keys: target, task_num, trigger, state, payload (optional)
+            try:
+                dispatch_test_args = json.loads(args[i+1])
+            except Exception as e:
+                print(f"Error: --dispatch-test argument must be valid JSON: {e}", file=sys.stderr)
+                sys.exit(1)
+            i += 2
         else:
             i += 1
 
@@ -325,6 +675,53 @@ def main():
         result = perform_scan(project_root)
         print(json.dumps(result, indent=2))
         sys.exit(0)
+
+    if simulate_handoff:
+        # --simulate-handoff: side-effect-free; show what would dispatch given current repo state
+        tmp_state = WatcherState.__new__(WatcherState)
+        tmp_state.project_root = project_root
+        tmp_state.agents = {
+            "codex": {"id": "codex", "name": "Codex", "type": "planner"},
+            "antigravity": {"id": "antigravity", "name": "Antigravity", "type": "executor"},
+            "grok-build": {"id": "grok-build", "name": "Grok Build", "type": "reviewer"}
+        }
+        tmp_state.config = tmp_state.load_config()
+        mode = tmp_state.config.get("execution_mode", "visual-only")
+        simulated = perform_simulate_handoff(project_root, execution_mode=mode, config=tmp_state.config)
+        print(json.dumps(simulated, indent=2))
+        sys.exit(0)
+
+    if dispatch_test_args is not None:
+        # --dispatch-test: CI integration test hook.
+        # Runs a single dispatch_handoff() call and waits for the result file.
+        # Exits 0 and prints dispatch_result JSON on success; exits 1 on failure.
+        required = {"target", "task_num", "trigger", "state"}
+        missing = required - dispatch_test_args.keys()
+        if missing:
+            print(f"Error: --dispatch-test JSON missing required keys: {missing}", file=sys.stderr)
+            sys.exit(1)
+        payload = dispatch_test_args.get("payload") or {
+            "task_num": dispatch_test_args["task_num"],
+            "project_root": project_root,
+            "status": dispatch_test_args["state"],
+            "timestamp": time.time()
+        }
+        timeout_wait = dispatch_test_args.get("timeout_wait", 15)
+        try:
+            result = perform_dispatch_one(
+                project_root,
+                dispatch_test_args["target"],
+                dispatch_test_args["task_num"],
+                dispatch_test_args["trigger"],
+                dispatch_test_args["state"],
+                payload,
+                timeout_wait=timeout_wait
+            )
+            print(json.dumps(result, indent=2))
+            sys.exit(0 if result.get("success") else 1)
+        except RuntimeError as e:
+            print(f"Error: {e}", file=sys.stderr)
+            sys.exit(1)
 
     if not HAS_WATCHDOG:
         print("Error: The 'watchdog' package is required to run the watcher in daemon/monitoring mode.", file=sys.stderr)
@@ -391,9 +788,6 @@ def main():
                     tool=f"Implementing TASK-{task_num} on {branch}",
                     project_root=state.project_root
                 )
-                # Antigravity handoff execution
-                cmd = state.config["antigravity"]["command"]
-                webhook = state.config["antigravity"]["webhook"]
                 handoff_data = {
                     "task_num": task_num,
                     "branch": branch,
@@ -401,27 +795,10 @@ def main():
                     "status": status,
                     "timestamp": time.time()
                 }
-
-                # B3/B5: Webhook and command routing
-                if cmd or webhook:
-                    if cmd:
-                        run_command_in_shell(cmd, task_num, state.project_root)
-                    else:
-                        post_webhook(webhook, handoff_data)
-                else:
-                    # Fallback visual-only mode: B4: write to task_handoff_NNN.json
-                    handoff_path = os.path.join(state.project_root, "REVIEWS", f"task_handoff_{task_num}.json")
-                    try:
-                        os.makedirs(os.path.dirname(handoff_path), exist_ok=True)
-                        with open(handoff_path, "w", encoding="utf-8") as hf:
-                            json.dump(handoff_data, hf, indent=2)
-                    except Exception:
-                        pass
-                    print(
-                        f"Warning: Visual status updated for Antigravity, but execution handoff is pending configuration. "
-                        f"Handoff payload written to REVIEWS/task_handoff_{task_num}.json",
-                        file=sys.stderr
-                    )
+                dispatch_handoff(
+                    state, "antigravity", task_num,
+                    "task_status", status, handoff_data
+                )
             elif status == "MERGED":
                 post_agent_event(
                     "agent.idle",
@@ -448,34 +825,17 @@ def main():
                             tool=f"Reviewing TASK-{tnum}",
                             project_root=state.project_root
                         )
-                        # Grok Build handoff execution: B6: Gated strictly on UNDER_REVIEW
-                        grok_cmd = state.config["grok"]["command"]
-                        grok_webhook = state.config["grok"].get("webhook")
+                        # Grok Build handoff: gated strictly on UNDER_REVIEW
                         grok_handoff = {
                             "task_num": tnum,
                             "project_root": state.project_root,
                             "status": "UNDER_REVIEW",
                             "timestamp": time.time()
                         }
-                        if grok_cmd or grok_webhook:
-                            if grok_cmd:
-                                run_command_in_shell(grok_cmd, tnum, state.project_root)
-                            else:
-                                post_webhook(grok_webhook, grok_handoff)
-                        else:
-                            # B5: Grok missing-command/webhook handoff fallback
-                            handoff_path = os.path.join(state.project_root, "REVIEWS", f"grok_handoff_{tnum}.json")
-                            try:
-                                os.makedirs(os.path.dirname(handoff_path), exist_ok=True)
-                                with open(handoff_path, "w", encoding="utf-8") as hf:
-                                    json.dump(grok_handoff, hf, indent=2)
-                            except Exception:
-                                pass
-                            print(
-                                f"Warning: Visual status updated for Grok Build, but execution handoff is pending configuration. "
-                                f"Handoff payload written to REVIEWS/grok_handoff_{tnum}.json",
-                                file=sys.stderr
-                            )
+                        dispatch_handoff(
+                            state, "grok", tnum,
+                            "registry_state", "UNDER_REVIEW", grok_handoff
+                        )
 
         elif rel_path.startswith("REVIEWS/"):
             if not task_num:
@@ -496,9 +856,27 @@ def main():
             elif rel_path.startswith("REVIEWS/review_"):
                 decision = parse_review_file(path)
                 if decision:
-                    # Run route-review-decision
-                    router_cmd = f"node agent-runner/route-review-decision.js {task_num}"
-                    run_command_in_shell(router_cmd, task_num, state.project_root)
+                    # Run route-review-decision asynchronously via dispatch engine
+                    router_payload = {
+                        "task_num": task_num,
+                        "project_root": state.project_root,
+                        "decision": decision,
+                        "timestamp": time.time()
+                    }
+                    router_cmd = f"node agent-runner/route-review-decision.js {{task_num}}"
+                    # Temporarily override config for router command (internal, no consumer cfg needed)
+                    router_cfg_override = dict(state.config)
+                    router_cfg_override["antigravity"] = {"command": router_cmd, "webhook": None}
+                    router_cfg_override["execution_mode"] = "active"
+                    router_state = type('_RS', (), {
+                        'config': router_cfg_override,
+                        'project_root': state.project_root,
+                        'dispatched_keys': state.dispatched_keys
+                    })()
+                    dispatch_handoff(
+                        router_state, "antigravity", task_num,
+                        "review_decision", decision, router_payload
+                    )
 
                     antigravity_info = state.agents["antigravity"]
                     codex_info = state.agents["codex"]
