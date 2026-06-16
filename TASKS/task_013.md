@@ -1,15 +1,15 @@
 # TASK-013: Add consultative GroupChat planning artifacts with 小C final authority
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_013_groupchat_planning_artifacts`
-- **PR URL**: `N/A`
+- **PR URL**: `N/A (local merge @ 102a49a)`
 - **Linked Advice**: `N/A (GroupChat DRAFT advisory replaces task_advice; 小A/小B advice incorporated 2026-06-16)`
-- **Linked Review**: [review_request_013.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_request_013.md)
+- **Linked Review**: [review_013.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_013.md)
 - **Dependencies**: None
 
 ---

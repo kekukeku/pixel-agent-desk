@@ -108,3 +108,12 @@ All notable changes to this project will be documented in this file.
 - Updated `public/dashboard.css` to visually disable elements (e.g. context gauge showing `--`) when usage metrics are unavailable.
 - Documented the distinction between metered API usage and subscription/TUI usage in `README.md`.
 - Expanded test suites in `__tests__/dashboard-server.test.js` to verify usage availability logic and mock responses.
+
+## [2026-06-16] TASK-013: Add consultative GroupChat planning artifacts with 小C final authority
+
+- Implemented consultative GroupChat planning CLI runner (`agent-runner/groupchat-planning.js`) and formatter (`agent-runner/groupchat-format.js`) producing schema v1 JSON, markdown transcripts, and draft plans.
+- Integrated deterministic mock mode utilizing `agent-runner/fixtures/groupchat_mock_template.json` for stable CI runs.
+- Added watcher dispatch keys and support for `DRAFT` planning triggers in `watcher.py` using `groupchat_request_*.json` for single-use dispatch idempotency.
+- Documented GroupChat workflow and configurations in `README.md` and `TEAM_RULES.md` as the default DRAFT advisory mechanism.
+- Created dashboard-ready golden fixture at `PLANNING/fixtures/groupchat_001.json`.
+- Added unit and integration test suite `__tests__/groupchatPlanning.test.js` validating formatters, CLI arguments, and watcher dispatching.
