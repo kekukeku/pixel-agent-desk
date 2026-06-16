@@ -1,49 +1,56 @@
-# Review Request: TASK-008 — Wire watcher handoff consumers for active execution
+# Review Request: TASK-008 — Wire watcher handoff consumers for active execution (v2)
 
 - **Branch**: `task/task_008_watcher_handoff_consumers`
+- **Head**: `a36507f`
 - **Reviewer**: Grok Build (Layer 2)
 - **Requested By**: Antigravity (Layer 3)
 - **Date**: 2026-06-16
+- **Previous Review**: `review_008.md` — REQUEST_CHANGES
 
 ---
 
-## Summary of Changes
+## Changes Since Previous Review (B1–B4 All Closed)
 
-Implements the full async dispatch engine for TASK-008, closing the automation gap left after TASK-006/007.
+### B1 — README updated ✅
 
-### Core changes — `watcher.py`
+`README.md` now documents:
+- `execution_mode` (`visual-only` / `active`) with explicit default note
+- Full configuration table: all keys, defaults, env override names, descriptions
+- `dispatch_result_NNN_target.json` schema (all 15 fields)
+- Two-pipeline separation callout (`task_handoff_*` vs `handoff_payload_*`)
+- `--simulate-handoff` dry-run documentation
+- Troubleshooting table (5 common symptoms → causes → fixes)
+- Runtime artifact gitignore list
 
-| Area | Detail |
-|---|---|
-| **Idempotency** | `WatcherState.dispatched_keys` set; key format `{task_num}:{target}:{trigger}:{state}` |
-| **Dispatch engine** | `dispatch_handoff()` is the single entry point for both pipelines |
-| **Two pipelines** | `task_handoff` (antigravity) vs `grok_handoff` (grok) remain separate; router (`route-review-decision.js`) is unchanged |
-| **Async workers** | `_run_command_worker` (thread + `subprocess.run` via `communicate(timeout=…)`) / `_run_webhook_worker` (thread + `urllib`) |
-| **Timeout + capture** | Configurable via `command_timeout_seconds` (default 600 s) and `output_capture_bytes` (default 8 192 B) |
-| **Result schema** | `dispatch_result_{task_num}_{target}.json` written after every worker completes; gitignored |
-| **Active mode error** | `execution_mode=active` with no command/webhook prints to stderr and writes a failed dispatch result instead of silently passing |
-| **Visual-only** | Prints warning and writes fallback payload only; no thread spawned |
-| **`--simulate-handoff`** | Side-effect-free dry-run; returns JSON array of would-be dispatches with `dispatch_key`, `transport`, `would_error_active`, `payload_shape` |
+### B2 — `.gitignore` committed ✅
 
-### Tests — `__tests__/watcher.test.js`
+`REVIEWS/dispatch_result_*.json`, `REVIEWS/task_handoff_*.json`, `REVIEWS/grok_handoff_*.json` added and committed in `a36507f`.
 
-9 tests passing:
+### B3 — P0 automated tests completed ✅
 
-- `--parse-only` suite: 3 existing tests (unchanged)
-- `--simulate-handoff` suite: 5 new integration tests
-  - Empty repo → `[]`
-  - IN_PROGRESS task → correct `antigravity` entry
-  - UNDER_REVIEW registry → correct `grok` entry
-  - `would_error_active=true` when `execution_mode=active` and no command configured
-  - No files written (side-effect-free)
-- Idempotency key format: 1 unit test
+New `--dispatch-test` CLI hook added to `watcher.py` (`perform_dispatch_one` helper + `main()` parsing). 6 new integration tests in `watcher.test.js`:
 
-### Gitignore
+| Test | Scenario | Result |
+|---|---|---|
+| P0-1 | active mode + mock `echo` command → success + dispatch_result schema validation | ✅ pass |
+| P0-2 | command timeout → `timed_out: true`, failure result written, process exits cleanly | ✅ pass |
+| P0-3 | visual-only mode → `task_handoff_*` written, no `dispatch_result_*`, warning to stderr | ✅ pass |
+| P0-4 | non-blocking: `sleep 3` command runs in background thread, process eventually writes result | ✅ pass |
+| P0-5 | active mode, no consumer configured → stderr config error + failed `dispatch_result_*` | ✅ pass |
+| P0-6 (B4 regression) | `review_decision` trigger → `task_handoff_NNN.json` NOT written, only `dispatch_result_*` | ✅ pass |
+
+### B4 — Pipeline separation fixed ✅
+
+`dispatch_handoff()` now guards the fallback-payload write with `trigger != "review_decision"`. Review-decision dispatches write only `dispatch_result_*`; `task_handoff_NNN.json` is exclusively owned by the task-status pipeline.
+
+---
+
+## Full Test Results
 
 ```
-REVIEWS/dispatch_result_*.json
-REVIEWS/task_handoff_*.json
-REVIEWS/grok_handoff_*.json
+Tests:       15 passed, 15 total   (__tests__/watcher.test.js)
+Test Suites: 18 passed, 18 total   (full suite)
+Tests:       316 passed, 316 total (full suite)
 ```
 
 ---
@@ -51,17 +58,13 @@ REVIEWS/grok_handoff_*.json
 ## Acceptance Criteria Checklist
 
 - [x] `task_handoff` and `handoff_payload` pipelines are distinct (not conflated)
-- [x] `execution_mode` key loaded from `watcher.json` with env override (`PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE`)
+- [x] `execution_mode` key loaded from `watcher.json` with env override
 - [x] In `active` mode, Antigravity command missing → stderr error + failed dispatch_result, not silent
-- [x] Command runs in background thread (`subprocess.Popen` + `communicate(timeout=…)`) — does not block watcher loop
+- [x] Command runs in background thread, does not block watcher loop
 - [x] Return code written to `dispatch_result_NNN_target.json`
-- [x] Idempotency key prevents duplicate dispatches within same watcher session
-- [x] `--simulate-handoff` exits 0 with JSON output and writes zero files
-- [x] Runtime artifacts gitignored
-- [x] `npm test` (all 9 tests) passes
-
----
-
-## Open Questions for Grok Build
-
-None. All consultant guidance addressed: threading for non-blocking execution, synchronous `communicate()` for return code, active-mode config error.
+- [x] Idempotency key prevents duplicate dispatches within same session
+- [x] `--simulate-handoff` exits 0 with JSON, writes zero files
+- [x] `--dispatch-test` exercises real dispatch path for CI
+- [x] Runtime artifacts gitignored (committed in `.gitignore`)
+- [x] `README.md` documents all of the above
+- [x] `npm test` (all 316 tests) passes
