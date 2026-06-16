@@ -1,14 +1,14 @@
 # TASK-010: Launch dashboard directly and remove always-floating desktop avatar
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `MEDIUM`
 - **Branch**: `task/task_010_launch_dashboard_directly`
-- **PR URL**: `TBD`
-- **Linked Review**: `TBD`
+- **PR URL**: `N/A (local merge @ d5aac91)`
+- **Linked Review**: [review_010.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_010.md)
 - **Dependencies**: [TASK-009](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_009.md)
 
 ---

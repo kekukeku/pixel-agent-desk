@@ -75,3 +75,22 @@ All notable changes to this project will be documented in this file.
 - Extended **`__tests__/watcher.test.js`** with 6 P0 integration tests (total 15 tests): active dispatch success + schema validation, command timeout failure, visual-only fallback, non-blocking thread verification, active-mode missing consumer config error, and B4 pipeline separation regression test.
 - Full test suite: **316/316 passing**.
 
+## [2026-06-16] TASK-009: Editable agent display names in dashboard roster
+
+- Added a compact edit button inline next to each agent's display name in the right-side System Roster.
+- Implemented client-side logic in `public/dashboard.js` and `public/dashboard.css` to allow renaming active agent avatars inline.
+- Created `GET /api/name-map` and `PUT /api/agents/:id/name` API endpoints in `src/dashboard-server.js` to manage custom names for local requests.
+- Integrated name mapping logic in `src/agentManager.js` to parse, update, and persist custom names to `~/.pixel-agent-desk/name-map.json` using atomic file writes.
+- Implemented payload validation on the name update route to reject names longer than 40 characters and ensure safe rendering via `textContent`.
+- Added unit and integration tests in `__tests__/agentManager.test.js` and `__tests__/dashboard-server.test.js` covering name resolution and mapping APIs.
+
+## [2026-06-16] TASK-010: Launch dashboard directly and remove always-floating desktop avatar
+
+- Modified default app startup in `src/main.js` to launch the full web dashboard directly via `windowManager.createDashboardWindow()` instead of the legacy `alwaysOnTop` transparent mini window.
+- Removed the legacy mini window creation path and the keep-alive loop (`startKeepAlive()`) from default startup and activate events.
+- Re-ordered main process startup lifecycle to register agent event listeners and flush pending starts before the dashboard window finishes loading.
+- Retained the `renderer-ready` IPC listener and legacy window creation helpers for backward compatibility without activating them by default.
+- Updated the dashboard codebase comments and documented the direct-dashboard startup behavior and optional PiP trigger in `README.md`.
+- Confirmed full test suite compatibility with **332/332 tests passing**.
+
+
