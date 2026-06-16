@@ -1,14 +1,14 @@
 # TASK-008: Wire watcher handoff consumers for active execution
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_008_watcher_handoff_consumers`
-- **PR URL**: `TBD`
-- **Linked Review**: [review_request_008.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_request_008.md)
+- **PR URL**: `N/A (local merge @ 1f4b2e5)`
+- **Linked Review**: [review_008.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_008.md)
 - **Dependencies**: [TASK-006](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_006.md), [TASK-007](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_007.md)
 
 ---

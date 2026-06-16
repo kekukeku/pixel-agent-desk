@@ -51,3 +51,20 @@ All notable changes to this project will be documented in this file.
 - Ensured `--parse-only` mode runs with zero side-effects and tolerates missing `watchdog` dependencies gracefully.
 - Refactored `README.md` project watcher section to use a checklist-style Quick Start guide.
 - Fully documented the Visual-Only Mode behavior, fallback payloads (`REVIEWS/task_handoff_NNN.json` and `REVIEWS/grok_handoff_NNN.json`), and their exact JSON fields/trigger conditions.
+
+## [2026-06-16] TASK-008: Wire watcher handoff consumers for active execution
+
+- Replaced fire-and-forget `subprocess.Popen` with a full **async dispatch engine**: `_run_command_worker` and `_run_webhook_worker` run in background threads using `subprocess.Popen` + `communicate(timeout=…)` to capture return codes without blocking the watcher loop.
+- Introduced `dispatch_handoff()` as the single, authoritative entry point for both the **task-execution pipeline** (`REVIEWS/task_handoff_NNN.json` → Antigravity) and the **registry pipeline** (`REVIEWS/grok_handoff_NNN.json` → Grok). The review-decision router (`route-review-decision.js`) remains the owner of `handoff_payload_NNN.json`.
+- Enforced **pipeline separation**: `review_decision` dispatches are guarded from writing `task_handoff_NNN.json`; only `dispatch_result_*` is written for router dispatch auditing.
+- Added **session-level idempotency** via `WatcherState.dispatched_keys` set; key format: `{task_num}:{target}:{trigger}:{state_or_decision}`.
+- Added **`execution_mode`** config key (`visual-only` default / `active`): in `active` mode, misconfigured targets (no `command` or `webhook`) emit a stderr error and write a failed `dispatch_result_*` instead of silently passing.
+- Added **`dispatch_result_{task_num}_{target}.json`** result schema (15 fields including `transport`, `success`, `returncode`, `http_status`, `timed_out`, `stdout_excerpt`, `stderr_excerpt`, `started_at`, `finished_at`, `dispatch_key`).
+- New config keys with env var overrides: `execution_mode` (`PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE`), `command_timeout_seconds` (`PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT_SECONDS`), `output_capture_bytes` (`PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES`).
+- Added **`--simulate-handoff`** CLI flag: pure side-effect-free dry-run returning a JSON array of dispatches that would fire given current repo state, including `dispatch_key`, `transport`, `would_error_active`, and `payload_shape`.
+- Added **`--dispatch-test`** CLI flag + `perform_dispatch_one()` helper: CI integration test hook that runs a single real dispatch, waits for the background worker to complete, and returns the `dispatch_result` JSON.
+- Committed runtime artifact patterns to **`.gitignore`**: `REVIEWS/dispatch_result_*.json`, `REVIEWS/task_handoff_*.json`, `REVIEWS/grok_handoff_*.json`.
+- Updated **`README.md`**: documented `execution_mode` modes, full config table with env overrides/defaults, `dispatch_result` schema table, two-pipeline separation callout, `--simulate-handoff` dry-run usage, and a troubleshooting table (5 common symptoms).
+- Extended **`__tests__/watcher.test.js`** with 6 P0 integration tests (total 15 tests): active dispatch success + schema validation, command timeout failure, visual-only fallback, non-blocking thread verification, active-mode missing consumer config error, and B4 pipeline separation regression test.
+- Full test suite: **316/316 passing**.
+
