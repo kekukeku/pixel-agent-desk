@@ -19,7 +19,8 @@ The development and merging process is governed by a logical and physical separa
 |              CODEX (Layer 1: Planner)                       |
 |  - Analyzes requirements & writes TASKS/task_NNN.md         |
 |  - Registers tasks in AGENT_STATE.md Central Registry       |
-|  - Write-restricted to TASKS/ & AGENT_STATE.md only         |
+|  - Write-restricted to TASKS/, AGENT_STATE.md,              |
+|    and colleagueview/ only                                  |
 +-------------------------------------------------------------+
                                 |
                                 | Task Specification Ready
@@ -44,7 +45,7 @@ The development and merging process is governed by a logical and physical separa
 |             GROK BUILD (Layer 2: Reviewer)                  |
 |  - Decision authority (Logical Gate)                        |
 |  - Evaluates changes & outputs decision signal               |
-|  - Write-restricted to REVIEWS/ folder only                 |
+|  - Write-restricted to REVIEWS/ and colleagueview/ only     |
 +-------------------------------------------------------------+
                                 |
                                 | Decision: APPROVE
@@ -59,9 +60,9 @@ The development and merging process is governed by a logical and physical separa
 
 | Component | Layer / Role | Function & Boundaries |
 | :--- | :--- | :--- |
-| **Codex** | Layer 1: Planner | Gathers context, increments task indices, writes specifications to `TASKS/task_NNN.md`, and updates `AGENT_STATE.md` with `DRAFT` status. **Cannot write to codebase source files or `REVIEWS/`**. |
-| **Grok Build** | Layer 2: Reviewer | Evaluates code quality and writes reviews. Produces decision signal (`APPROVE`, `REQUEST_CHANGES`, `REJECT`). **Write-restricted to `REVIEWS/` only**. |
-| **Antigravity** | Layer 3: Executor | Implements code changes, creates PRs, runs tests, logs merges in `LOGS/change_log.md`, and executes physical merges once unlocked. **Cannot write to `REVIEWS/`**. |
+| **Codex** | Layer 1: Planner | Gathers context, increments task indices, writes specifications to `TASKS/task_NNN.md`, and updates `AGENT_STATE.md` with `DRAFT` status. May also write retrospective colleague feedback to `colleagueview/`. **Cannot write to codebase source files or `REVIEWS/` unless explicitly authorized by the human operator**. |
+| **Grok Build** | Layer 2: Reviewer | Evaluates code quality and writes reviews. Produces decision signal (`APPROVE`, `REQUEST_CHANGES`, `REJECT`). May also write retrospective colleague feedback to `colleagueview/`. **Write-restricted to `REVIEWS/` and `colleagueview/` only**. |
+| **Antigravity** | Layer 3: Executor | Implements code changes, creates PRs, runs tests, logs merges in `LOGS/change_log.md`, and executes physical merges once unlocked. May also write retrospective colleague feedback to `colleagueview/`. **Cannot write to `REVIEWS/`**. |
 
 ---
 
@@ -77,6 +78,7 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
 | **Review Request File** | `REVIEWS/review_request_NNN.md` | E.g. `REVIEWS/review_request_001.md`. |
 | **Review File** | `REVIEWS/review_NNN.md` | E.g. `REVIEWS/review_001.md`. |
 | **Log Entry** | Linked to `TASK-NNN` | Appended directly to `LOGS/change_log.md`. |
+| **Colleague View** | `colleagueview/<agent>_view_NNN.md` | E.g. `colleagueview/codex_view_010.md`. |
 
 ---
 
@@ -258,7 +260,57 @@ When reviewing code changes, Grok Build must structure `REVIEWS/review_NNN.md` l
 
 ---
 
-## 11. Post-Merge Reconciliation & Metadata Alignment
+## 11. Cross-Agent Retrospective: `盤點此次任務`
+
+When the human operator tells any agent `盤點此次任務`, that agent must produce a written retrospective for the latest completed task.
+
+### Scope and Inputs
+
+The responding agent must identify the latest completed task from `AGENT_STATE.md` using the most recent task with state `MERGED`, unless the operator explicitly names a task number. It should inspect the relevant task and review artifacts, including but not limited to:
+
+- `TASKS/task_NNN.md`
+- `REVIEWS/review_NNN.md`
+- `REVIEWS/validation_master_NNN.md`
+- `LOGS/change_log.md`
+- any task-specific dispatch, handoff, or validation files when relevant
+
+### Required Content
+
+The retrospective must evaluate the other two colleagues, not the responding agent itself. For each colleague, include:
+
+- concrete strengths and what they did well
+- constructive suggestions for what to improve next time
+- a short overall impression of their performance on that task
+
+The tone must be candid, respectful, and improvement-oriented. Praise should be specific; criticism should be actionable and tied to evidence from the task artifacts.
+
+### Output Location and Naming
+
+The responding agent must write the retrospective as a Markdown file in `colleagueview/`:
+
+```text
+colleagueview/<agent>_view_NNN.md
+```
+
+Use these lowercase agent identifiers:
+
+- Codex: `codex_view_NNN.md`
+- Antigravity: `antigravity_view_NNN.md`
+- Grok Build: `grok_view_NNN.md`
+
+Example:
+
+```text
+colleagueview/codex_view_010.md
+```
+
+### Shared Directory Permission
+
+`colleagueview/` is a shared retrospective workspace. Codex, Antigravity, and Grok Build are all allowed to read and write this directory regardless of their normal task/review/code write restrictions. This exception applies only to retrospective Markdown files and local directory documentation inside `colleagueview/`.
+
+---
+
+## 12. Post-Merge Reconciliation & Metadata Alignment
 
 Upon merging a task branch to the `main` or `master` branch, Antigravity is responsible for performing a reconciliation check to ensure repository metadata remains aligned:
 1. **Registry Updates**: Update `AGENT_STATE.md` with the task's final state `MERGED` and log the exact merged date.
