@@ -93,4 +93,8 @@ All notable changes to this project will be documented in this file.
 - Updated the dashboard codebase comments and documented the direct-dashboard startup behavior and optional PiP trigger in `README.md`.
 - Confirmed full test suite compatibility with **332/332 tests passing**.
 
+## [2026-06-16] TASK-011: Set default agent display names in user name map
 
+- Created/updated the local configuration file at `~/.pixel-agent-desk/name-map.json` to assign custom Chinese names to the three default watcher agents: `antigravity` ("小A沐瑤"), `grok-build` ("小B盼兮"), and `codex` ("小C婉清").
+- Removed stale fallback mappings and confirmed JSON validity.
+- Conducted cross-agent retrospective evaluations (`colleagueview/`) for Codex (Layer 1) and Grok Build (Layer 2) for TASK-011.

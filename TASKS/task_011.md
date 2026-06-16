@@ -1,14 +1,14 @@
 # TASK-011: Set default agent display names in user name map
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-16
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `LOW`
 - **Branch**: `task/task_011_default_agent_names`
-- **PR URL**: `TBD`
-- **Linked Review**: `TBD`
+- **PR URL**: `N/A (local merge @ 094b9ff)`
+- **Linked Review**: [review_011.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_011.md)
 - **Dependencies**: [TASK-010](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_010.md)
 
 ---
