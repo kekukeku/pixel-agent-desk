@@ -14,6 +14,7 @@ function createTempRepo() {
   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-watcher-test-'));
   fs.mkdirSync(path.join(rootDir, 'TASKS'));
   fs.mkdirSync(path.join(rootDir, 'REVIEWS'));
+  fs.mkdirSync(path.join(rootDir, 'PLANNING'));
   return rootDir;
 }
 
@@ -184,6 +185,75 @@ describe('watcher.py --simulate-handoff integration', () => {
     const entry = result.find(e => e.task_num === '010' && e.target === 'antigravity');
     expect(entry).toBeUndefined();
   });
+
+  test('returns planning entry for DRAFT tasks if request/output files are absent', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'TASKS', 'task_010.md'),
+      `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
+      'utf8'
+    );
+    const stdout = execSync(
+      `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
+      {
+        encoding: 'utf8',
+        cwd: path.resolve(__dirname, '..'),
+        env: { ...process.env, PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE: 'active' }
+      }
+    );
+    const result = JSON.parse(stdout);
+    const entry = result.find(e => e.task_num === '010' && e.target === 'planning');
+    expect(entry).toBeDefined();
+    expect(entry.trigger).toBe('task_status');
+    expect(entry.state).toBe('DRAFT');
+    expect(entry.dispatch_key).toBe('010:planning:task_status:DRAFT');
+  });
+
+  test('does not return planning entry for DRAFT tasks if groupchat request file exists', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'TASKS', 'task_010.md'),
+      `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'PLANNING', 'groupchat_request_010.json'),
+      `{}`,
+      'utf8'
+    );
+    const stdout = execSync(
+      `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
+      {
+        encoding: 'utf8',
+        cwd: path.resolve(__dirname, '..')
+      }
+    );
+    const result = JSON.parse(stdout);
+    const entry = result.find(e => e.task_num === '010' && e.target === 'planning');
+    expect(entry).toBeUndefined();
+  });
+
+  test('does not return planning entry for DRAFT tasks if groupchat output file exists', () => {
+    fs.writeFileSync(
+      path.join(tempDir, 'TASKS', 'task_010.md'),
+      `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
+      'utf8'
+    );
+    fs.writeFileSync(
+      path.join(tempDir, 'PLANNING', 'groupchat_010.json'),
+      `{}`,
+      'utf8'
+    );
+    const stdout = execSync(
+      `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
+      {
+        encoding: 'utf8',
+        cwd: path.resolve(__dirname, '..')
+      }
+    );
+    const result = JSON.parse(stdout);
+    const entry = result.find(e => e.task_num === '010' && e.target === 'planning');
+    expect(entry).toBeUndefined();
+  });
+
 
   test('simulate-handoff does not write any files', () => {
     fs.writeFileSync(
@@ -466,6 +536,38 @@ describe('watcher.py --dispatch-test P0 integration', () => {
 
     // dispatch_result MUST be written
     const resultFile = path.join(tempDir, 'REVIEWS', 'dispatch_result_094_antigravity.json');
+    expect(fs.existsSync(resultFile)).toBe(true);
+  });
+
+  // P0-7: planning dispatch → success result, planning path, groupchat_request written
+  test('active mode + planning echo command → success result and files in PLANNING directory', () => {
+    const env = activeEnv({
+      PIXEL_AGENT_DESK_PLANNING_COMMAND: 'echo session={session_id} input={input_path}',
+    });
+    const args = {
+      target: 'planning',
+      task_num: '093',
+      trigger: 'task_status',
+      state: 'DRAFT',
+      timeout_wait: 10,
+    };
+    const stdout = dispatchTest(tempDir, args, env);
+    const result = JSON.parse(stdout);
+
+    expect(result.task_num).toBe('093');
+    expect(result.target).toBe('planning');
+    expect(result.trigger).toBe('task_status');
+    expect(result.state).toBe('DRAFT');
+    expect(result.dispatch_key).toBe('093:planning:task_status:DRAFT');
+    expect(result.transport).toBe('command');
+    expect(result.success).toBe(true);
+    expect(result.stdout_excerpt).toMatch(/session=093 input=/);
+
+    // PLANNING directory files should exist
+    const requestFile = path.join(tempDir, 'PLANNING', 'groupchat_request_093.json');
+    expect(fs.existsSync(requestFile)).toBe(true);
+
+    const resultFile = path.join(tempDir, 'PLANNING', 'dispatch_result_093_planning.json');
     expect(fs.existsSync(resultFile)).toBe(true);
   });
 });

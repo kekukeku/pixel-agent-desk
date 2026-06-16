@@ -53,6 +53,10 @@ class WatcherState:
                 "command": "node agent-runner/trigger-review.js {task_num}",
                 "webhook": None
             },
+            "planning": {
+                "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
+                "webhook": None
+            },
             "keep_alive_seconds": DEFAULT_KEEP_ALIVE_SECONDS
         }
         if os.path.exists(config_path):
@@ -60,7 +64,7 @@ class WatcherState:
                 with open(config_path, "r", encoding="utf-8") as f:
                     user_config = json.load(f)
                     # Merge configurations
-                    for key in ["antigravity", "grok"]:
+                    for key in ["antigravity", "grok", "planning"]:
                         if key in user_config:
                             if user_config[key] is not None:
                                 defaults[key].update(user_config[key])
@@ -114,6 +118,14 @@ class WatcherState:
         env_grok_web = os.environ.get("PIXEL_AGENT_DESK_GROK_WEBHOOK")
         if env_grok_web:
             defaults["grok"]["webhook"] = env_grok_web
+
+        env_plan_cmd = os.environ.get("PIXEL_AGENT_DESK_PLANNING_COMMAND")
+        if env_plan_cmd:
+            defaults["planning"]["command"] = env_plan_cmd
+
+        env_plan_web = os.environ.get("PIXEL_AGENT_DESK_PLANNING_WEBHOOK")
+        if env_plan_web:
+            defaults["planning"]["webhook"] = env_plan_web
 
         env_keep_alive = os.environ.get("PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE")
         if env_keep_alive:
@@ -232,6 +244,14 @@ def extract_task_num(file_path):
         return match.group(1)
     return None
 
+def extract_session_id_from_request(file_path):
+    # Matches groupchat_request_NNN.json
+    match = re.search(r'groupchat_request_(\d+)\.json$', file_path)
+    if match:
+        return match.group(1)
+    return None
+
+
 # ── Dispatch Engine ────────────────────────────────────────────────────────────
 
 def make_dispatch_key(task_num, target, trigger, state_or_decision):
@@ -250,7 +270,10 @@ def _write_dispatch_result(project_root, result):
     """Write target-specific dispatch result file. Errors are printed to stderr."""
     task_num = result["task_num"]
     target = result["target"]
-    path = os.path.join(project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
+    if target == "planning":
+        path = os.path.join(project_root, "PLANNING", f"dispatch_result_{task_num}_{target}.json")
+    else:
+        path = os.path.join(project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
     try:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as f:
@@ -340,14 +363,14 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
     Central dispatcher. Writes fallback payload, enforces idempotency,
     and in active mode fires an async command or webhook worker.
 
-    target: 'antigravity' | 'grok'
+    target: 'antigravity' | 'grok' | 'planning'
     trigger: 'task_status' | 'registry_state' | 'review_decision'
-    state_or_decision: e.g. 'IN_PROGRESS', 'UNDER_REVIEW', 'APPROVE'
+    state_or_decision: e.g. 'IN_PROGRESS', 'UNDER_REVIEW', 'APPROVE', 'DRAFT'
     payload: dict to send as handoff body
     """
     dispatch_key = make_dispatch_key(task_num, target, trigger, state_or_decision)
 
-    # Write fallback payload file — but ONLY for the task-execution and registry pipelines.
+    # Write fallback payload file — but ONLY for the task-execution, registry and planning pipelines.
     # review_decision dispatches must NOT write task_handoff_NNN.json: that file is exclusively
     # owned by the task-status pipeline. The review router writes handoff_payload_NNN.json via
     # route-review-decision.js; the dispatch_result_* file (written by the worker) is the audit
@@ -355,6 +378,8 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
     if trigger != "review_decision":
         if target == "antigravity":
             fallback_path = os.path.join(state.project_root, "REVIEWS", f"task_handoff_{task_num}.json")
+        elif target == "planning":
+            fallback_path = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{task_num}.json")
         else:
             fallback_path = os.path.join(state.project_root, "REVIEWS", f"grok_handoff_{task_num}.json")
         try:
@@ -383,7 +408,7 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
         # visual-only: warn and exit
         print(
             f"Warning: visual-only mode — handoff payload written to "
-            f"REVIEWS/{os.path.basename(fallback_path)}, no command/webhook fired.",
+            f"{os.path.relpath(fallback_path, state.project_root)}, no command/webhook fired.",
             file=sys.stderr
         )
         return
@@ -393,7 +418,7 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
         # Emit configuration error and write a failed dispatch result
         err_msg = (
             f"Error: execution_mode=active but no command/webhook configured for "
-            f"'{target}'. Handoff payload is in REVIEWS/{os.path.basename(fallback_path)}"
+            f"'{target}'. Handoff payload is in {os.path.relpath(fallback_path, state.project_root)}"
         )
         print(err_msg, file=sys.stderr)
         result = {
@@ -436,7 +461,11 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
     }
 
     if cmd:
-        formatted_cmd = cmd.replace("{task_num}", task_num)
+        if target == "planning":
+            input_path = os.path.join(state.project_root, "TASKS", f"task_{task_num}.md")
+            formatted_cmd = cmd.replace("{session_id}", task_num).replace("{input_path}", input_path)
+        else:
+            formatted_cmd = cmd.replace("{task_num}", task_num)
         t = Thread(
             target=_run_command_worker,
             args=(formatted_cmd, timeout, capture, state.project_root, result_template),
@@ -465,6 +494,8 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
     anti_web = (config.get("antigravity") or {}).get("webhook")
     grok_cmd = (config.get("grok") or {}).get("command", "node agent-runner/trigger-review.js {task_num}")
     grok_web = (config.get("grok") or {}).get("webhook")
+    plan_cmd = (config.get("planning") or {}).get("command")
+    plan_web = (config.get("planning") or {}).get("webhook")
 
     scan = perform_scan(project_root)
     dispatches = []
@@ -490,6 +521,28 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
                     "timestamp": "<float>"
                 }
             })
+        elif status == "DRAFT":
+            request_file = os.path.join(project_root, "PLANNING", f"groupchat_request_{task_num}.json")
+            output_file = os.path.join(project_root, "PLANNING", f"groupchat_{task_num}.json")
+            if not os.path.exists(request_file) and not os.path.exists(output_file):
+                key = make_dispatch_key(task_num, "planning", "task_status", "DRAFT")
+                transport = "command" if plan_cmd else ("webhook" if plan_web else "none")
+                dispatches.append({
+                    "dispatch_key": key,
+                    "task_num": task_num,
+                    "target": "planning",
+                    "trigger": "task_status",
+                    "state": "DRAFT",
+                    "transport": transport,
+                    "would_error_active": execution_mode == "active" and transport == "none",
+                    "payload_shape": {
+                        "session_id": task_num,
+                        "task_num": task_num,
+                        "project_root": project_root,
+                        "status": "DRAFT",
+                        "timestamp": "<float>"
+                    }
+                })
 
     for task_num, reg_state in scan["registry"].items():
         if reg_state == "UNDER_REVIEW":
@@ -510,6 +563,28 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
                     "timestamp": "<float>"
                 }
             })
+        elif reg_state == "DRAFT":
+            request_file = os.path.join(project_root, "PLANNING", f"groupchat_request_{task_num}.json")
+            output_file = os.path.join(project_root, "PLANNING", f"groupchat_{task_num}.json")
+            if not os.path.exists(request_file) and not os.path.exists(output_file):
+                key = make_dispatch_key(task_num, "planning", "registry_state", "DRAFT")
+                transport = "command" if plan_cmd else ("webhook" if plan_web else "none")
+                dispatches.append({
+                    "dispatch_key": key,
+                    "task_num": task_num,
+                    "target": "planning",
+                    "trigger": "registry_state",
+                    "state": "DRAFT",
+                    "transport": transport,
+                    "would_error_active": execution_mode == "active" and transport == "none",
+                    "payload_shape": {
+                        "session_id": task_num,
+                        "task_num": task_num,
+                        "project_root": project_root,
+                        "status": "DRAFT",
+                        "timestamp": "<float>"
+                    }
+                })
 
     return dispatches
 
@@ -528,9 +603,14 @@ def perform_dispatch_one(project_root, target, task_num, trigger, state_or_decis
     """
     state = WatcherState(project_root)
     dispatch_handoff(state, target, task_num, trigger, state_or_decision, payload)
-    result_path = os.path.join(
-        project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json"
-    )
+    if target == "planning":
+        result_path = os.path.join(
+            project_root, "PLANNING", f"dispatch_result_{task_num}_{target}.json"
+        )
+    else:
+        result_path = os.path.join(
+            project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json"
+        )
     deadline = time.time() + timeout_wait
     while time.time() < deadline:
         if os.path.exists(result_path):
@@ -568,6 +648,7 @@ class RepoEventHandler(FileSystemEventHandler):
         is_relevant = (
             rel_path.startswith("TASKS/") and rel_path.endswith(".md") or
             rel_path.startswith("REVIEWS/") and rel_path.endswith(".md") or
+            (rel_path.startswith("PLANNING/") and os.path.basename(rel_path).startswith("groupchat_request_") and rel_path.endswith(".json")) or
             rel_path == "AGENT_STATE.md"
         )
         if not is_relevant:
@@ -750,6 +831,14 @@ def main():
             if os.path.isfile(p):
                 state.mtimes[os.path.abspath(p)] = os.path.getmtime(p)
 
+    planning_dir = os.path.join(project_root, "PLANNING")
+    if os.path.exists(planning_dir):
+        for fname in os.listdir(planning_dir):
+            if fname.startswith("groupchat_request_") and fname.endswith(".json"):
+                p = os.path.join(planning_dir, fname)
+                if os.path.isfile(p):
+                    state.mtimes[os.path.abspath(p)] = os.path.getmtime(p)
+
     state_file = os.path.join(project_root, "AGENT_STATE.md")
     if os.path.exists(state_file):
         state.mtimes[os.path.abspath(state_file)] = os.path.getmtime(state_file)
@@ -801,6 +890,30 @@ def main():
                     state, "antigravity", task_num,
                     "task_status", status, handoff_data
                 )
+            elif status == "DRAFT":
+                request_file = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{task_num}.json")
+                output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{task_num}.json")
+                if not os.path.exists(request_file) and not os.path.exists(output_file):
+                    codex_info = state.agents["codex"]
+                    post_agent_event(
+                        "agent.working",
+                        codex_info["id"],
+                        codex_info["name"],
+                        codex_info["type"],
+                        tool=f"Planning session {task_num}",
+                        project_root=state.project_root
+                    )
+                    handoff_data = {
+                        "session_id": task_num,
+                        "task_num": task_num,
+                        "project_root": state.project_root,
+                        "status": status,
+                        "timestamp": time.time()
+                    }
+                    dispatch_handoff(
+                        state, "planning", task_num,
+                        "task_status", status, handoff_data
+                    )
             elif status == "MERGED":
                 post_agent_event(
                     "agent.idle",
@@ -837,6 +950,66 @@ def main():
                         dispatch_handoff(
                             state, "grok", tnum,
                             "registry_state", "UNDER_REVIEW", grok_handoff
+                        )
+                    elif new_state == "DRAFT":
+                        request_file = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{tnum}.json")
+                        output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{tnum}.json")
+                        if not os.path.exists(request_file) and not os.path.exists(output_file):
+                            codex_info = state.agents["codex"]
+                            post_agent_event(
+                                "agent.working",
+                                codex_info["id"],
+                                codex_info["name"],
+                                codex_info["type"],
+                                tool=f"Planning session {tnum}",
+                                project_root=state.project_root
+                            )
+                            handoff_data = {
+                                "session_id": tnum,
+                                "task_num": tnum,
+                                "project_root": state.project_root,
+                                "status": "DRAFT",
+                                "timestamp": time.time()
+                            }
+                            dispatch_handoff(
+                                state, "planning", tnum,
+                                "registry_state", "DRAFT", handoff_data
+                            )
+
+        elif rel_path.startswith("PLANNING/"):
+            session_id = extract_session_id_from_request(path)
+            if session_id:
+                output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{session_id}.json")
+                if not os.path.exists(output_file):
+                    task_num = session_id
+                    try:
+                        with open(path, "r", encoding="utf-8") as f:
+                            data = json.load(f)
+                            task_num = data.get("task_num", session_id)
+                    except Exception:
+                        pass
+                    
+                    key = make_dispatch_key(session_id, "planning", "request_file", "DRAFT")
+                    if key not in state.dispatched_keys:
+                        codex_info = state.agents["codex"]
+                        post_agent_event(
+                            "agent.working",
+                            codex_info["id"],
+                            codex_info["name"],
+                            codex_info["type"],
+                            tool=f"Planning session {session_id}",
+                            project_root=state.project_root
+                        )
+                        handoff_data = {
+                            "session_id": session_id,
+                            "task_num": task_num,
+                            "project_root": state.project_root,
+                            "status": "DRAFT",
+                            "timestamp": time.time()
+                        }
+                        dispatch_handoff(
+                            state, "planning", session_id,
+                            "request_file", "DRAFT", handoff_data
                         )
 
         elif rel_path.startswith("REVIEWS/"):

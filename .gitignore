@@ -68,3 +68,9 @@ pixel_office/
 REVIEWS/dispatch_result_*.json
 REVIEWS/task_handoff_*.json
 REVIEWS/grok_handoff_*.json
+PLANNING/groupchat_*.json
+PLANNING/groupchat_*.md
+PLANNING/draft_*.md
+PLANNING/groupchat_request_*.json
+PLANNING/dispatch_result_*.json
+

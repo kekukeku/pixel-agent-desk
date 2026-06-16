@@ -106,16 +106,18 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
 2. **Review Signal Required**: No branch can be merged without an explicit `APPROVE` verdict in `REVIEWS/review_NNN.md` authored by Grok Build.
 3. **Execution**: Once Grok Build writes the approval and GitHub branch protection status checks pass, Antigravity executes the physical merge.
 
-### Local Watcher State Contract
+#### Local Watcher State Contract
 
 - Codex creates new tasks as `DRAFT`. `DRAFT` is planning-only and must not trigger Antigravity.
-- When a task enters `DRAFT`, the watcher must automatically dispatch Grok Build for draft-task advisory.
-- Grok Build writes non-binding planning advice to `REVIEWS/task_advice_NNN.md`. This file is advisory only; it is not a merge gate and must not be treated as the final implementation review.
-- Codex reads `REVIEWS/task_advice_NNN.md`, judges which suggestions to adopt, and remains the final authority for the task specification.
-- Codex releases the finalized task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS`.
-- The watcher dispatches Antigravity only for `IN_PROGRESS` task status changes. It must not dispatch executor work for `DRAFT`.
+- When a task enters `DRAFT`, the watcher dispatches the consultative GroupChat planning/advisory runner (Trigger A).
+- The GroupChat runner conducts a visible, seven-step planning conversation involving Codex (Planner, `codex`), Grok Build (Reviewer, `grok-build`), and Antigravity (Executor, `antigravity`).
+- The planning conversation outputs structured v1 JSON (`PLANNING/groupchat_<sessionId>.json`), a human-readable markdown transcript (`PLANNING/groupchat_<sessionId>.md`), and a final plan proposal (`PLANNING/draft_<sessionId>.md`).
+- Codex reads the GroupChat artifacts, judges which suggestions from Grok Build or Antigravity to adopt (or modify/reject), and remains the final authority for the task specification. No approval from other agents is required to proceed.
+- Codex releases the finalized task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS` (Trigger B).
+- The watcher dispatches Antigravity only for `IN_PROGRESS` task status changes (Trigger C). It must not dispatch executor work for `DRAFT`.
 - Antigravity must mark implementation complete by moving the task to `UNDER_REVIEW` in `AGENT_STATE.md` (and keeping task metadata aligned). It must not use `COMPLETED`.
-- `UNDER_REVIEW` is the only local state that triggers Grok Build review dispatch.
+- `UNDER_REVIEW` is the only local state that triggers Grok Build review dispatch (Trigger F).
+- Legacy Compatibility: The single-agent advisory file `REVIEWS/task_advice_NNN.md` remains documented and supported only as a compatibility fallback for projects that have not migrated to the consultative GroupChat planning workflow.
 
 ---
 
@@ -128,30 +130,31 @@ To automate advisory and review work, Grok Build does not continuously poll. It 
                    ↓
         [Local Watcher Advisory Dispatcher]
                    ↓
-      [Grok Build writes task_advice_NNN.md]
+      [GroupChat Planning Runner generates]
+     [PLANNING/groupchat_NNN.* & draft_NNN.md]
                    ↓
-       [Codex finalizes task -> IN_PROGRESS]
+        [Codex finalizes task -> IN_PROGRESS]
                    ↓
-          [Antigravity implementation]
+           [Antigravity implementation]
                    ↓
- [PR Opened / Synchronized / Local UNDER_REVIEW]
+  [PR Opened / Synchronized / Local UNDER_REVIEW]
                    ↓
-      [Review Dispatcher / Local Watcher]
+       [Review Dispatcher / Local Watcher]
                    ↓
-        [Grok Build writes review_NNN.md]
+         [Grok Build writes review_NNN.md]
                    ↓
-        [Decision Router applies handoff]
+         [Decision Router applies handoff]
 ```
 
-- **Trigger A (Draft Advisory)**: When Codex creates or updates a task in `DRAFT`, the local watcher dispatches Grok Build for planning advice. Grok Build writes `REVIEWS/task_advice_NNN.md`.
-- **Trigger B (Codex Finalization)**: When `REVIEWS/task_advice_NNN.md` appears, Codex reviews the advice, accepts or rejects suggestions at its own judgment, edits the task if needed, and releases the task by moving it to `IN_PROGRESS`.
+- **Trigger A (Draft Advisory / Consultative GroupChat)**: When Codex creates or updates a task in `DRAFT`, the local watcher dispatches the consultative GroupChat planning runner. The runner generates a visible 7-step conversation timeline and final plan under `PLANNING/groupchat_<sessionId>.*` and `PLANNING/draft_<sessionId>.md`. If GroupChat is not enabled/supported in the target repository, it falls back to single-agent advisory where Grok Build writes `REVIEWS/task_advice_NNN.md`.
+- **Trigger B (Codex Finalization)**: When the consultative planning output files (`PLANNING/groupchat_request_<sessionId>.json` or `REVIEWS/task_advice_NNN.md`) are resolved, Codex reviews the advice, accepts or rejects suggestions at its own judgment, edits the task if needed, and releases the task by moving it to `IN_PROGRESS`.
 - **Trigger C (Execution Dispatch)**: When a task transitions to `IN_PROGRESS`, the watcher dispatches Antigravity for implementation.
 - **Trigger D (PR Event-based Review)**: When a PR is `opened` or `synchronized` (new commits pushed), a GitHub Action triggers the Grok Build review runner.
 - **Trigger E (Label-based Review)**: Manually adding the `needs-grok-review` label to a PR triggers a re-run of the review runner.
 - **Trigger F (Local Review Runner)**: Antigravity completes implementation by moving `AGENT_STATE.md` to `UNDER_REVIEW`; the local watcher then generates `REVIEWS/review_request_NNN.md`, prepares the diff payload, and dispatches Grok Build.
 - **Trigger G (Decision Router)**: When `REVIEWS/review_NNN.md` appears or changes on a PR branch, `.github/workflows/review-decision-router.yml` parses the decision and routes the next handoff through labels, PR comments, uploaded payload artifacts, and the optional `HANDOFF_ROUTER_ENDPOINT` webhook.
 
-### Draft Advice File Contract
+### Draft Advice File Contract (Legacy Fallback)
 
 `REVIEWS/task_advice_NNN.md` must include:
 

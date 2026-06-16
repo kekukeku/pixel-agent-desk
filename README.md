@@ -197,6 +197,10 @@ The watcher dispatches configured commands or webhooks asynchronously via backgr
     "command": "node agent-runner/trigger-review.js {task_num}",
     "webhook": null
   },
+  "planning": {
+    "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
+    "webhook": null
+  },
   "keep_alive_seconds": 60,
   "command_timeout_seconds": 600,
   "output_capture_bytes": 8192,
@@ -219,12 +223,16 @@ The watcher dispatches configured commands or webhooks asynchronously via backgr
 | `antigravity.webhook` | `""` | — | HTTP POST URL for Antigravity handoffs (used if command is empty) |
 | `grok.command` | `"node agent-runner/trigger-review.js {task_num}"` | — | Shell command for Grok review dispatch |
 | `grok.webhook` | `""` | — | HTTP POST URL for Grok dispatch (used if command is empty) |
+| `planning.command` | `""` | — | Shell command for consultative planning handoffs; `{session_id}` and `{input_path}` are replaced at runtime |
+| `planning.webhook` | `""` | — | HTTP POST URL for consultative planning handoffs (used if command is empty) |
 | `keep_alive_seconds` | `60` | `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE` | Periodic `agent.idle` heartbeat interval |
 | `command_timeout_seconds` | `600` | `PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT` | Max seconds before a dispatched command is killed |
 | `output_capture_bytes` | `8192` | `PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES` | Max bytes captured from stdout/stderr per dispatch |
 | `agents.*.id/name/type` | see defaults | `PIXEL_AGENT_DESK_AGENT_{ROLE}_{FIELD}` | Override per-agent identity (roles: `CODEX`, `ANTIGRAVITY`, `GROK_BUILD`) |
 
 - `{task_num}`: Replaced with the 3-digit task number (e.g. `006`) at dispatch time.
+- `{session_id}`: Replaced with the session ID (e.g. `013`) at dispatch time for the planning target.
+- `{input_path}`: Replaced with the absolute path to the input trigger file (e.g. the path to `groupchat_request_{session_id}.json` under `PLANNING/`) for the planning target.
 - Commands are **always non-blocking** — they run in background threads; the watcher loop continues.
 - If both `command` and `webhook` are set, `command` takes precedence.
 
@@ -368,6 +376,37 @@ Subscription-based tools, local TUI-based agents, and other platforms that do no
 - The dashboard displays **"Usage unavailable"** and **"Cost: N/A"** to prevent misleading zeros.
 - The context window indicator shows **`--`** (disabled).
 - Overall KPIs for token totals and costs on the dashboard are reframed to highlight live/idle metered activity, excluding non-metered agents from the totals to avoid skewing the averages.
+
+---
+
+## Consultative GroupChat Planning
+
+Pixel Agent Desk features a consultative, multi-agent planning workflow that allows Codex (Planner), Grok Build (Reviewer), and Antigravity (Executor) to participate in a shared, visible planning conversation *before* a task enters the formal execution pipeline. 
+
+### Life Cycle & Workflow Integration
+1. **DRAFT Stage**: Codex creates a new task or planning session. Under the hood, the watcher monitors the directory for `DRAFT` status and dispatches the GroupChat runner (Trigger A).
+2. **Consultative GroupChat**: The runner initiates a fixed seven-step dialogue to collect suggestions and review points.
+3. **Planning Authority**: Codex (小C) maintains the final authority to accept, modify, or reject advice before releasing the task to `IN_PROGRESS` (Trigger B).
+4. **Implementation**: Once in `IN_PROGRESS`, Antigravity (小A) performs the actual code changes (Trigger C).
+5. **Review**: Moving the task registry to `UNDER_REVIEW` dispatches the formal review checks (Trigger F).
+
+### CLI Usage
+You can run the planning runner locally in a deterministic mode to generate plans and mock transcripts:
+```bash
+npm run groupchat:plan -- --session 001 --input "Implement a new database index for tasks"
+```
+Options:
+- `--session <sessionId>`: The unique numeric string identifier for the planning session.
+- `--input <text>`: The initial requirement or objective text.
+- `--input-file <path>`: Alternative path to a text file containing requirements.
+- `--task <taskNum>`: Optional task number to link this session to a formal task.
+- `--force`: Overwrite existing artifacts in the `PLANNING/` directory.
+
+### Generated Artifacts
+Every planning session outputs three files inside the `PLANNING/` directory:
+- `PLANNING/groupchat_<sessionId>.json`: Structured v1 timeline data for dashboard integration.
+- `PLANNING/groupchat_<sessionId>.md`: A human-readable full conversation transcript showing the sequence of proposals and advice.
+- `PLANNING/draft_<sessionId>.md`: A clean proposal markdown containing the finalized task specification drafted by Codex.
 
 ---
 

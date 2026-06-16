@@ -1,0 +1,636 @@
+diff --git a/.gitignore b/.gitignore
+index 6b7cf7d..06409b8 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -68,3 +68,9 @@ pixel_office/
+ REVIEWS/dispatch_result_*.json
+ REVIEWS/task_handoff_*.json
+ REVIEWS/grok_handoff_*.json
++PLANNING/groupchat_*.json
++PLANNING/groupchat_*.md
++PLANNING/draft_*.md
++PLANNING/groupchat_request_*.json
++PLANNING/dispatch_result_*.json
++
+diff --git a/AGENT_STATE.md b/AGENT_STATE.md
+index 2c4545a..8d7e0d1 100644
+--- a/AGENT_STATE.md
++++ b/AGENT_STATE.md
+@@ -32,6 +32,8 @@ To prevent state drift between different folders and GitHub PR statuses, this re
+ | **TASK-010** | `MERGED` | [task/task_010_launch_dashboard_directly](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_010.md) | 2026-06-16 |
+ | **TASK-011** | `MERGED` | [task/task_011_default_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_011.md) | 2026-06-16 |
+ | **TASK-012** | `MERGED` | [task/task_012_subscription_usage_ui](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_012.md) | 2026-06-16 |
++| **TASK-013** | `UNDER_REVIEW` | [task/task_013_groupchat_planning_artifacts](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_013.md) | 2026-06-16 |
++
+ 
+ ---
+ 
+diff --git a/README.md b/README.md
+index dc2d869..a577616 100644
+--- a/README.md
++++ b/README.md
+@@ -197,6 +197,10 @@ The watcher dispatches configured commands or webhooks asynchronously via backgr
+     "command": "node agent-runner/trigger-review.js {task_num}",
+     "webhook": null
+   },
++  "planning": {
++    "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
++    "webhook": null
++  },
+   "keep_alive_seconds": 60,
+   "command_timeout_seconds": 600,
+   "output_capture_bytes": 8192,
+@@ -219,12 +223,16 @@ The watcher dispatches configured commands or webhooks asynchronously via backgr
+ | `antigravity.webhook` | `""` | — | HTTP POST URL for Antigravity handoffs (used if command is empty) |
+ | `grok.command` | `"node agent-runner/trigger-review.js {task_num}"` | — | Shell command for Grok review dispatch |
+ | `grok.webhook` | `""` | — | HTTP POST URL for Grok dispatch (used if command is empty) |
++| `planning.command` | `""` | — | Shell command for consultative planning handoffs; `{session_id}` and `{input_path}` are replaced at runtime |
++| `planning.webhook` | `""` | — | HTTP POST URL for consultative planning handoffs (used if command is empty) |
+ | `keep_alive_seconds` | `60` | `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE` | Periodic `agent.idle` heartbeat interval |
+ | `command_timeout_seconds` | `600` | `PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT` | Max seconds before a dispatched command is killed |
+ | `output_capture_bytes` | `8192` | `PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES` | Max bytes captured from stdout/stderr per dispatch |
+ | `agents.*.id/name/type` | see defaults | `PIXEL_AGENT_DESK_AGENT_{ROLE}_{FIELD}` | Override per-agent identity (roles: `CODEX`, `ANTIGRAVITY`, `GROK_BUILD`) |
+ 
+ - `{task_num}`: Replaced with the 3-digit task number (e.g. `006`) at dispatch time.
++- `{session_id}`: Replaced with the session ID (e.g. `013`) at dispatch time for the planning target.
++- `{input_path}`: Replaced with the absolute path to the input trigger file (e.g. the path to `groupchat_request_{session_id}.json` under `PLANNING/`) for the planning target.
+ - Commands are **always non-blocking** — they run in background threads; the watcher loop continues.
+ - If both `command` and `webhook` are set, `command` takes precedence.
+ 
+@@ -371,6 +379,37 @@ Subscription-based tools, local TUI-based agents, and other platforms that do no
+ 
+ ---
+ 
++## Consultative GroupChat Planning
++
++Pixel Agent Desk features a consultative, multi-agent planning workflow that allows Codex (Planner), Grok Build (Reviewer), and Antigravity (Executor) to participate in a shared, visible planning conversation *before* a task enters the formal execution pipeline. 
++
++### Life Cycle & Workflow Integration
++1. **DRAFT Stage**: Codex creates a new task or planning session. Under the hood, the watcher monitors the directory for `DRAFT` status and dispatches the GroupChat runner (Trigger A).
++2. **Consultative GroupChat**: The runner initiates a fixed seven-step dialogue to collect suggestions and review points.
++3. **Planning Authority**: Codex (小C) maintains the final authority to accept, modify, or reject advice before releasing the task to `IN_PROGRESS` (Trigger B).
++4. **Implementation**: Once in `IN_PROGRESS`, Antigravity (小A) performs the actual code changes (Trigger C).
++5. **Review**: Moving the task registry to `UNDER_REVIEW` dispatches the formal review checks (Trigger F).
++
++### CLI Usage
++You can run the planning runner locally in a deterministic mode to generate plans and mock transcripts:
++```bash
++npm run groupchat:plan -- --session 001 --input "Implement a new database index for tasks"
++```
++Options:
++- `--session <sessionId>`: The unique numeric string identifier for the planning session.
++- `--input <text>`: The initial requirement or objective text.
++- `--input-file <path>`: Alternative path to a text file containing requirements.
++- `--task <taskNum>`: Optional task number to link this session to a formal task.
++- `--force`: Overwrite existing artifacts in the `PLANNING/` directory.
++
++### Generated Artifacts
++Every planning session outputs three files inside the `PLANNING/` directory:
++- `PLANNING/groupchat_<sessionId>.json`: Structured v1 timeline data for dashboard integration.
++- `PLANNING/groupchat_<sessionId>.md`: A human-readable full conversation transcript showing the sequence of proposals and advice.
++- `PLANNING/draft_<sessionId>.md`: A clean proposal markdown containing the finalized task specification drafted by Codex.
++
++---
++
+ ## Troubleshooting
+ 
+ **Avatars do not appear**
+diff --git a/TEAM_RULES.md b/TEAM_RULES.md
+index 9fc02ea..4802f41 100644
+--- a/TEAM_RULES.md
++++ b/TEAM_RULES.md
+@@ -106,16 +106,18 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
+ 2. **Review Signal Required**: No branch can be merged without an explicit `APPROVE` verdict in `REVIEWS/review_NNN.md` authored by Grok Build.
+ 3. **Execution**: Once Grok Build writes the approval and GitHub branch protection status checks pass, Antigravity executes the physical merge.
+ 
+-### Local Watcher State Contract
++#### Local Watcher State Contract
+ 
+ - Codex creates new tasks as `DRAFT`. `DRAFT` is planning-only and must not trigger Antigravity.
+-- When a task enters `DRAFT`, the watcher must automatically dispatch Grok Build for draft-task advisory.
+-- Grok Build writes non-binding planning advice to `REVIEWS/task_advice_NNN.md`. This file is advisory only; it is not a merge gate and must not be treated as the final implementation review.
+-- Codex reads `REVIEWS/task_advice_NNN.md`, judges which suggestions to adopt, and remains the final authority for the task specification.
+-- Codex releases the finalized task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS`.
+-- The watcher dispatches Antigravity only for `IN_PROGRESS` task status changes. It must not dispatch executor work for `DRAFT`.
++- When a task enters `DRAFT`, the watcher dispatches the consultative GroupChat planning/advisory runner (Trigger A).
++- The GroupChat runner conducts a visible, seven-step planning conversation involving Codex (Planner, `codex`), Grok Build (Reviewer, `grok-build`), and Antigravity (Executor, `antigravity`).
++- The planning conversation outputs structured v1 JSON (`PLANNING/groupchat_<sessionId>.json`), a human-readable markdown transcript (`PLANNING/groupchat_<sessionId>.md`), and a final plan proposal (`PLANNING/draft_<sessionId>.md`).
++- Codex reads the GroupChat artifacts, judges which suggestions from Grok Build or Antigravity to adopt (or modify/reject), and remains the final authority for the task specification. No approval from other agents is required to proceed.
++- Codex releases the finalized task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS` (Trigger B).
++- The watcher dispatches Antigravity only for `IN_PROGRESS` task status changes (Trigger C). It must not dispatch executor work for `DRAFT`.
+ - Antigravity must mark implementation complete by moving the task to `UNDER_REVIEW` in `AGENT_STATE.md` (and keeping task metadata aligned). It must not use `COMPLETED`.
+-- `UNDER_REVIEW` is the only local state that triggers Grok Build review dispatch.
++- `UNDER_REVIEW` is the only local state that triggers Grok Build review dispatch (Trigger F).
++- Legacy Compatibility: The single-agent advisory file `REVIEWS/task_advice_NNN.md` remains documented and supported only as a compatibility fallback for projects that have not migrated to the consultative GroupChat planning workflow.
+ 
+ ---
+ 
+@@ -128,30 +130,31 @@ To automate advisory and review work, Grok Build does not continuously poll. It
+                    ↓
+         [Local Watcher Advisory Dispatcher]
+                    ↓
+-      [Grok Build writes task_advice_NNN.md]
++      [GroupChat Planning Runner generates]
++     [PLANNING/groupchat_NNN.* & draft_NNN.md]
+                    ↓
+-       [Codex finalizes task -> IN_PROGRESS]
++        [Codex finalizes task -> IN_PROGRESS]
+                    ↓
+-          [Antigravity implementation]
++           [Antigravity implementation]
+                    ↓
+- [PR Opened / Synchronized / Local UNDER_REVIEW]
++  [PR Opened / Synchronized / Local UNDER_REVIEW]
+                    ↓
+-      [Review Dispatcher / Local Watcher]
++       [Review Dispatcher / Local Watcher]
+                    ↓
+-        [Grok Build writes review_NNN.md]
++         [Grok Build writes review_NNN.md]
+                    ↓
+-        [Decision Router applies handoff]
++         [Decision Router applies handoff]
+ ```
+ 
+-- **Trigger A (Draft Advisory)**: When Codex creates or updates a task in `DRAFT`, the local watcher dispatches Grok Build for planning advice. Grok Build writes `REVIEWS/task_advice_NNN.md`.
+-- **Trigger B (Codex Finalization)**: When `REVIEWS/task_advice_NNN.md` appears, Codex reviews the advice, accepts or rejects suggestions at its own judgment, edits the task if needed, and releases the task by moving it to `IN_PROGRESS`.
++- **Trigger A (Draft Advisory / Consultative GroupChat)**: When Codex creates or updates a task in `DRAFT`, the local watcher dispatches the consultative GroupChat planning runner. The runner generates a visible 7-step conversation timeline and final plan under `PLANNING/groupchat_<sessionId>.*` and `PLANNING/draft_<sessionId>.md`. If GroupChat is not enabled/supported in the target repository, it falls back to single-agent advisory where Grok Build writes `REVIEWS/task_advice_NNN.md`.
++- **Trigger B (Codex Finalization)**: When the consultative planning output files (`PLANNING/groupchat_request_<sessionId>.json` or `REVIEWS/task_advice_NNN.md`) are resolved, Codex reviews the advice, accepts or rejects suggestions at its own judgment, edits the task if needed, and releases the task by moving it to `IN_PROGRESS`.
+ - **Trigger C (Execution Dispatch)**: When a task transitions to `IN_PROGRESS`, the watcher dispatches Antigravity for implementation.
+ - **Trigger D (PR Event-based Review)**: When a PR is `opened` or `synchronized` (new commits pushed), a GitHub Action triggers the Grok Build review runner.
+ - **Trigger E (Label-based Review)**: Manually adding the `needs-grok-review` label to a PR triggers a re-run of the review runner.
+ - **Trigger F (Local Review Runner)**: Antigravity completes implementation by moving `AGENT_STATE.md` to `UNDER_REVIEW`; the local watcher then generates `REVIEWS/review_request_NNN.md`, prepares the diff payload, and dispatches Grok Build.
+ - **Trigger G (Decision Router)**: When `REVIEWS/review_NNN.md` appears or changes on a PR branch, `.github/workflows/review-decision-router.yml` parses the decision and routes the next handoff through labels, PR comments, uploaded payload artifacts, and the optional `HANDOFF_ROUTER_ENDPOINT` webhook.
+ 
+-### Draft Advice File Contract
++### Draft Advice File Contract (Legacy Fallback)
+ 
+ `REVIEWS/task_advice_NNN.md` must include:
+ 
+diff --git a/__tests__/watcher.test.js b/__tests__/watcher.test.js
+index 307f393..f98485c 100644
+--- a/__tests__/watcher.test.js
++++ b/__tests__/watcher.test.js
+@@ -14,6 +14,7 @@ function createTempRepo() {
+   const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-watcher-test-'));
+   fs.mkdirSync(path.join(rootDir, 'TASKS'));
+   fs.mkdirSync(path.join(rootDir, 'REVIEWS'));
++  fs.mkdirSync(path.join(rootDir, 'PLANNING'));
+   return rootDir;
+ }
+ 
+@@ -185,6 +186,75 @@ describe('watcher.py --simulate-handoff integration', () => {
+     expect(entry).toBeUndefined();
+   });
+ 
++  test('returns planning entry for DRAFT tasks if request/output files are absent', () => {
++    fs.writeFileSync(
++      path.join(tempDir, 'TASKS', 'task_010.md'),
++      `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
++      'utf8'
++    );
++    const stdout = execSync(
++      `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
++      {
++        encoding: 'utf8',
++        cwd: path.resolve(__dirname, '..'),
++        env: { ...process.env, PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE: 'active' }
++      }
++    );
++    const result = JSON.parse(stdout);
++    const entry = result.find(e => e.task_num === '010' && e.target === 'planning');
++    expect(entry).toBeDefined();
++    expect(entry.trigger).toBe('task_status');
++    expect(entry.state).toBe('DRAFT');
++    expect(entry.dispatch_key).toBe('010:planning:task_status:DRAFT');
++  });
++
++  test('does not return planning entry for DRAFT tasks if groupchat request file exists', () => {
++    fs.writeFileSync(
++      path.join(tempDir, 'TASKS', 'task_010.md'),
++      `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
++      'utf8'
++    );
++    fs.writeFileSync(
++      path.join(tempDir, 'PLANNING', 'groupchat_request_010.json'),
++      `{}`,
++      'utf8'
++    );
++    const stdout = execSync(
++      `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
++      {
++        encoding: 'utf8',
++        cwd: path.resolve(__dirname, '..')
++      }
++    );
++    const result = JSON.parse(stdout);
++    const entry = result.find(e => e.task_num === '010' && e.target === 'planning');
++    expect(entry).toBeUndefined();
++  });
++
++  test('does not return planning entry for DRAFT tasks if groupchat output file exists', () => {
++    fs.writeFileSync(
++      path.join(tempDir, 'TASKS', 'task_010.md'),
++      `# TASK-010\n\n- **Status**: \`DRAFT\`\n- **Branch**: \`task/task_010_test\`\n`,
++      'utf8'
++    );
++    fs.writeFileSync(
++      path.join(tempDir, 'PLANNING', 'groupchat_010.json'),
++      `{}`,
++      'utf8'
++    );
++    const stdout = execSync(
++      `python3 watcher.py --simulate-handoff --project-root "${tempDir}"`,
++      {
++        encoding: 'utf8',
++        cwd: path.resolve(__dirname, '..')
++      }
++    );
++    const result = JSON.parse(stdout);
++    const entry = result.find(e => e.task_num === '010' && e.target === 'planning');
++    expect(entry).toBeUndefined();
++  });
++
++
+   test('simulate-handoff does not write any files', () => {
+     fs.writeFileSync(
+       path.join(tempDir, 'TASKS', 'task_011.md'),
+@@ -468,4 +538,36 @@ describe('watcher.py --dispatch-test P0 integration', () => {
+     const resultFile = path.join(tempDir, 'REVIEWS', 'dispatch_result_094_antigravity.json');
+     expect(fs.existsSync(resultFile)).toBe(true);
+   });
++
++  // P0-7: planning dispatch → success result, planning path, groupchat_request written
++  test('active mode + planning echo command → success result and files in PLANNING directory', () => {
++    const env = activeEnv({
++      PIXEL_AGENT_DESK_PLANNING_COMMAND: 'echo session={session_id} input={input_path}',
++    });
++    const args = {
++      target: 'planning',
++      task_num: '093',
++      trigger: 'task_status',
++      state: 'DRAFT',
++      timeout_wait: 10,
++    };
++    const stdout = dispatchTest(tempDir, args, env);
++    const result = JSON.parse(stdout);
++
++    expect(result.task_num).toBe('093');
++    expect(result.target).toBe('planning');
++    expect(result.trigger).toBe('task_status');
++    expect(result.state).toBe('DRAFT');
++    expect(result.dispatch_key).toBe('093:planning:task_status:DRAFT');
++    expect(result.transport).toBe('command');
++    expect(result.success).toBe(true);
++    expect(result.stdout_excerpt).toMatch(/session=093 input=/);
++
++    // PLANNING directory files should exist
++    const requestFile = path.join(tempDir, 'PLANNING', 'groupchat_request_093.json');
++    expect(fs.existsSync(requestFile)).toBe(true);
++
++    const resultFile = path.join(tempDir, 'PLANNING', 'dispatch_result_093_planning.json');
++    expect(fs.existsSync(resultFile)).toBe(true);
++  });
+ });
+diff --git a/package.json b/package.json
+index 6dbad46..0fb0778 100644
+--- a/package.json
++++ b/package.json
+@@ -14,6 +14,7 @@
+     "reviewer-adapter": "node agent-runner/reviewer-adapter-server.js",
+     "workflow": "bash scripts/start_pixel_workflow.sh",
+     "generate-review-diff": "node agent-runner/generate-review-diff.js",
++    "groupchat:plan": "node agent-runner/groupchat-planning.js",
+     "lint": "eslint src/",
+     "lint:fix": "eslint src/ --fix",
+     "format": "prettier --write \"src/**/*.js\" \"__tests__/**/*.js\"",
+diff --git a/watcher.py b/watcher.py
+index fb8efd1..aa56843 100755
+--- a/watcher.py
++++ b/watcher.py
+@@ -53,6 +53,10 @@ class WatcherState:
+                 "command": "node agent-runner/trigger-review.js {task_num}",
+                 "webhook": None
+             },
++            "planning": {
++                "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
++                "webhook": None
++            },
+             "keep_alive_seconds": DEFAULT_KEEP_ALIVE_SECONDS
+         }
+         if os.path.exists(config_path):
+@@ -60,7 +64,7 @@ class WatcherState:
+                 with open(config_path, "r", encoding="utf-8") as f:
+                     user_config = json.load(f)
+                     # Merge configurations
+-                    for key in ["antigravity", "grok"]:
++                    for key in ["antigravity", "grok", "planning"]:
+                         if key in user_config:
+                             if user_config[key] is not None:
+                                 defaults[key].update(user_config[key])
+@@ -115,6 +119,14 @@ class WatcherState:
+         if env_grok_web:
+             defaults["grok"]["webhook"] = env_grok_web
+ 
++        env_plan_cmd = os.environ.get("PIXEL_AGENT_DESK_PLANNING_COMMAND")
++        if env_plan_cmd:
++            defaults["planning"]["command"] = env_plan_cmd
++
++        env_plan_web = os.environ.get("PIXEL_AGENT_DESK_PLANNING_WEBHOOK")
++        if env_plan_web:
++            defaults["planning"]["webhook"] = env_plan_web
++
+         env_keep_alive = os.environ.get("PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE")
+         if env_keep_alive:
+             try:
+@@ -232,6 +244,14 @@ def extract_task_num(file_path):
+         return match.group(1)
+     return None
+ 
++def extract_session_id_from_request(file_path):
++    # Matches groupchat_request_NNN.json
++    match = re.search(r'groupchat_request_(\d+)\.json$', file_path)
++    if match:
++        return match.group(1)
++    return None
++
++
+ # ── Dispatch Engine ────────────────────────────────────────────────────────────
+ 
+ def make_dispatch_key(task_num, target, trigger, state_or_decision):
+@@ -250,7 +270,10 @@ def _write_dispatch_result(project_root, result):
+     """Write target-specific dispatch result file. Errors are printed to stderr."""
+     task_num = result["task_num"]
+     target = result["target"]
+-    path = os.path.join(project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
++    if target == "planning":
++        path = os.path.join(project_root, "PLANNING", f"dispatch_result_{task_num}_{target}.json")
++    else:
++        path = os.path.join(project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json")
+     try:
+         os.makedirs(os.path.dirname(path), exist_ok=True)
+         with open(path, "w", encoding="utf-8") as f:
+@@ -340,14 +363,14 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
+     Central dispatcher. Writes fallback payload, enforces idempotency,
+     and in active mode fires an async command or webhook worker.
+ 
+-    target: 'antigravity' | 'grok'
++    target: 'antigravity' | 'grok' | 'planning'
+     trigger: 'task_status' | 'registry_state' | 'review_decision'
+-    state_or_decision: e.g. 'IN_PROGRESS', 'UNDER_REVIEW', 'APPROVE'
++    state_or_decision: e.g. 'IN_PROGRESS', 'UNDER_REVIEW', 'APPROVE', 'DRAFT'
+     payload: dict to send as handoff body
+     """
+     dispatch_key = make_dispatch_key(task_num, target, trigger, state_or_decision)
+ 
+-    # Write fallback payload file — but ONLY for the task-execution and registry pipelines.
++    # Write fallback payload file — but ONLY for the task-execution, registry and planning pipelines.
+     # review_decision dispatches must NOT write task_handoff_NNN.json: that file is exclusively
+     # owned by the task-status pipeline. The review router writes handoff_payload_NNN.json via
+     # route-review-decision.js; the dispatch_result_* file (written by the worker) is the audit
+@@ -355,6 +378,8 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
+     if trigger != "review_decision":
+         if target == "antigravity":
+             fallback_path = os.path.join(state.project_root, "REVIEWS", f"task_handoff_{task_num}.json")
++        elif target == "planning":
++            fallback_path = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{task_num}.json")
+         else:
+             fallback_path = os.path.join(state.project_root, "REVIEWS", f"grok_handoff_{task_num}.json")
+         try:
+@@ -383,7 +408,7 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
+         # visual-only: warn and exit
+         print(
+             f"Warning: visual-only mode — handoff payload written to "
+-            f"REVIEWS/{os.path.basename(fallback_path)}, no command/webhook fired.",
++            f"{os.path.relpath(fallback_path, state.project_root)}, no command/webhook fired.",
+             file=sys.stderr
+         )
+         return
+@@ -393,7 +418,7 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
+         # Emit configuration error and write a failed dispatch result
+         err_msg = (
+             f"Error: execution_mode=active but no command/webhook configured for "
+-            f"'{target}'. Handoff payload is in REVIEWS/{os.path.basename(fallback_path)}"
++            f"'{target}'. Handoff payload is in {os.path.relpath(fallback_path, state.project_root)}"
+         )
+         print(err_msg, file=sys.stderr)
+         result = {
+@@ -436,7 +461,11 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
+     }
+ 
+     if cmd:
+-        formatted_cmd = cmd.replace("{task_num}", task_num)
++        if target == "planning":
++            input_path = os.path.join(state.project_root, "TASKS", f"task_{task_num}.md")
++            formatted_cmd = cmd.replace("{session_id}", task_num).replace("{input_path}", input_path)
++        else:
++            formatted_cmd = cmd.replace("{task_num}", task_num)
+         t = Thread(
+             target=_run_command_worker,
+             args=(formatted_cmd, timeout, capture, state.project_root, result_template),
+@@ -465,6 +494,8 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
+     anti_web = (config.get("antigravity") or {}).get("webhook")
+     grok_cmd = (config.get("grok") or {}).get("command", "node agent-runner/trigger-review.js {task_num}")
+     grok_web = (config.get("grok") or {}).get("webhook")
++    plan_cmd = (config.get("planning") or {}).get("command")
++    plan_web = (config.get("planning") or {}).get("webhook")
+ 
+     scan = perform_scan(project_root)
+     dispatches = []
+@@ -490,6 +521,28 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
+                     "timestamp": "<float>"
+                 }
+             })
++        elif status == "DRAFT":
++            request_file = os.path.join(project_root, "PLANNING", f"groupchat_request_{task_num}.json")
++            output_file = os.path.join(project_root, "PLANNING", f"groupchat_{task_num}.json")
++            if not os.path.exists(request_file) and not os.path.exists(output_file):
++                key = make_dispatch_key(task_num, "planning", "task_status", "DRAFT")
++                transport = "command" if plan_cmd else ("webhook" if plan_web else "none")
++                dispatches.append({
++                    "dispatch_key": key,
++                    "task_num": task_num,
++                    "target": "planning",
++                    "trigger": "task_status",
++                    "state": "DRAFT",
++                    "transport": transport,
++                    "would_error_active": execution_mode == "active" and transport == "none",
++                    "payload_shape": {
++                        "session_id": task_num,
++                        "task_num": task_num,
++                        "project_root": project_root,
++                        "status": "DRAFT",
++                        "timestamp": "<float>"
++                    }
++                })
+ 
+     for task_num, reg_state in scan["registry"].items():
+         if reg_state == "UNDER_REVIEW":
+@@ -510,6 +563,28 @@ def perform_simulate_handoff(project_root, execution_mode="visual-only", config=
+                     "timestamp": "<float>"
+                 }
+             })
++        elif reg_state == "DRAFT":
++            request_file = os.path.join(project_root, "PLANNING", f"groupchat_request_{task_num}.json")
++            output_file = os.path.join(project_root, "PLANNING", f"groupchat_{task_num}.json")
++            if not os.path.exists(request_file) and not os.path.exists(output_file):
++                key = make_dispatch_key(task_num, "planning", "registry_state", "DRAFT")
++                transport = "command" if plan_cmd else ("webhook" if plan_web else "none")
++                dispatches.append({
++                    "dispatch_key": key,
++                    "task_num": task_num,
++                    "target": "planning",
++                    "trigger": "registry_state",
++                    "state": "DRAFT",
++                    "transport": transport,
++                    "would_error_active": execution_mode == "active" and transport == "none",
++                    "payload_shape": {
++                        "session_id": task_num,
++                        "task_num": task_num,
++                        "project_root": project_root,
++                        "status": "DRAFT",
++                        "timestamp": "<float>"
++                    }
++                })
+ 
+     return dispatches
+ 
+@@ -528,9 +603,14 @@ def perform_dispatch_one(project_root, target, task_num, trigger, state_or_decis
+     """
+     state = WatcherState(project_root)
+     dispatch_handoff(state, target, task_num, trigger, state_or_decision, payload)
+-    result_path = os.path.join(
+-        project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json"
+-    )
++    if target == "planning":
++        result_path = os.path.join(
++            project_root, "PLANNING", f"dispatch_result_{task_num}_{target}.json"
++        )
++    else:
++        result_path = os.path.join(
++            project_root, "REVIEWS", f"dispatch_result_{task_num}_{target}.json"
++        )
+     deadline = time.time() + timeout_wait
+     while time.time() < deadline:
+         if os.path.exists(result_path):
+@@ -568,6 +648,7 @@ class RepoEventHandler(FileSystemEventHandler):
+         is_relevant = (
+             rel_path.startswith("TASKS/") and rel_path.endswith(".md") or
+             rel_path.startswith("REVIEWS/") and rel_path.endswith(".md") or
++            (rel_path.startswith("PLANNING/") and os.path.basename(rel_path).startswith("groupchat_request_") and rel_path.endswith(".json")) or
+             rel_path == "AGENT_STATE.md"
+         )
+         if not is_relevant:
+@@ -750,6 +831,14 @@ def main():
+             if os.path.isfile(p):
+                 state.mtimes[os.path.abspath(p)] = os.path.getmtime(p)
+ 
++    planning_dir = os.path.join(project_root, "PLANNING")
++    if os.path.exists(planning_dir):
++        for fname in os.listdir(planning_dir):
++            if fname.startswith("groupchat_request_") and fname.endswith(".json"):
++                p = os.path.join(planning_dir, fname)
++                if os.path.isfile(p):
++                    state.mtimes[os.path.abspath(p)] = os.path.getmtime(p)
++
+     state_file = os.path.join(project_root, "AGENT_STATE.md")
+     if os.path.exists(state_file):
+         state.mtimes[os.path.abspath(state_file)] = os.path.getmtime(state_file)
+@@ -801,6 +890,30 @@ def main():
+                     state, "antigravity", task_num,
+                     "task_status", status, handoff_data
+                 )
++            elif status == "DRAFT":
++                request_file = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{task_num}.json")
++                output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{task_num}.json")
++                if not os.path.exists(request_file) and not os.path.exists(output_file):
++                    codex_info = state.agents["codex"]
++                    post_agent_event(
++                        "agent.working",
++                        codex_info["id"],
++                        codex_info["name"],
++                        codex_info["type"],
++                        tool=f"Planning session {task_num}",
++                        project_root=state.project_root
++                    )
++                    handoff_data = {
++                        "session_id": task_num,
++                        "task_num": task_num,
++                        "project_root": state.project_root,
++                        "status": status,
++                        "timestamp": time.time()
++                    }
++                    dispatch_handoff(
++                        state, "planning", task_num,
++                        "task_status", status, handoff_data
++                    )
+             elif status == "MERGED":
+                 post_agent_event(
+                     "agent.idle",
+@@ -838,6 +951,66 @@ def main():
+                             state, "grok", tnum,
+                             "registry_state", "UNDER_REVIEW", grok_handoff
+                         )
++                    elif new_state == "DRAFT":
++                        request_file = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{tnum}.json")
++                        output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{tnum}.json")
++                        if not os.path.exists(request_file) and not os.path.exists(output_file):
++                            codex_info = state.agents["codex"]
++                            post_agent_event(
++                                "agent.working",
++                                codex_info["id"],
++                                codex_info["name"],
++                                codex_info["type"],
++                                tool=f"Planning session {tnum}",
++                                project_root=state.project_root
++                            )
++                            handoff_data = {
++                                "session_id": tnum,
++                                "task_num": tnum,
++                                "project_root": state.project_root,
++                                "status": "DRAFT",
++                                "timestamp": time.time()
++                            }
++                            dispatch_handoff(
++                                state, "planning", tnum,
++                                "registry_state", "DRAFT", handoff_data
++                            )
++
++        elif rel_path.startswith("PLANNING/"):
++            session_id = extract_session_id_from_request(path)
++            if session_id:
++                output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{session_id}.json")
++                if not os.path.exists(output_file):
++                    task_num = session_id
++                    try:
++                        with open(path, "r", encoding="utf-8") as f:
++                            data = json.load(f)
++                            task_num = data.get("task_num", session_id)
++                    except Exception:
++                        pass
++                    
++                    key = make_dispatch_key(session_id, "planning", "request_file", "DRAFT")
++                    if key not in state.dispatched_keys:
++                        codex_info = state.agents["codex"]
++                        post_agent_event(
++                            "agent.working",
++                            codex_info["id"],
++                            codex_info["name"],
++                            codex_info["type"],
++                            tool=f"Planning session {session_id}",
++                            project_root=state.project_root
++                        )
++                        handoff_data = {
++                            "session_id": session_id,
++                            "task_num": task_num,
++                            "project_root": state.project_root,
++                            "status": "DRAFT",
++                            "timestamp": time.time()
++                        }
++                        dispatch_handoff(
++                            state, "planning", session_id,
++                            "request_file", "DRAFT", handoff_data
++                        )
+ 
+         elif rel_path.startswith("REVIEWS/"):
+             if not task_num:
