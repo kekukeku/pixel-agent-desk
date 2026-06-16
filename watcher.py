@@ -38,7 +38,9 @@ class WatcherState:
         self.last_processed = {}  # For debouncing: path -> last_time
 
     def load_config(self):
-        config_path = os.path.expanduser("~/.pixel-agent-desk/watcher.json")
+        config_path = os.environ.get("PIXEL_AGENT_DESK_WATCHER_CONFIG_PATH")
+        if not config_path:
+            config_path = os.path.expanduser("~/.pixel-agent-desk/watcher.json")
         defaults = {
             "execution_mode": "visual-only",
             "command_timeout_seconds": 600,

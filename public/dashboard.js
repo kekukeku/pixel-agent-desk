@@ -15,7 +15,8 @@ const DOM = {
   kpiTotalAgents: document.getElementById('kpiTotalAgents'),
   kpiTokens: document.getElementById('kpiTokens'),
   kpiCost: document.getElementById('kpiCost'),
-  kpiErrors: document.getElementById('kpiErrors')
+  kpiErrors: document.getElementById('kpiErrors'),
+  officePanelTitle: document.getElementById('officePanelTitle')
 };
 
 // ─── SSE CONNECTION ───
@@ -640,6 +641,20 @@ document.querySelectorAll('.nav-item').forEach(b => {
   }
 })();
 
+async function loadUsername() {
+  try {
+    const res = await fetch('/api/profile');
+    const data = await res.json();
+    if (data && data.username) {
+      if (DOM.officePanelTitle) {
+        DOM.officePanelTitle.textContent = `${data.username}'s Office`;
+      }
+    }
+  } catch (e) {
+    console.error('Error loading username:', e);
+  }
+}
+
 // ─── BOOT ───
 function initApp() {
   // Sync startup view
@@ -653,6 +668,7 @@ function initApp() {
   const tgtEl = document.getElementById(`${target}View`);
   if (tgtEl) tgtEl.classList.add('active');
 
+  loadUsername();
   connectSSE();
   if (target === 'heatmap') renderHeatmapView();
   else if (target === 'usage') renderUsageView();

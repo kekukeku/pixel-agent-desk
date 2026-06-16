@@ -6,6 +6,7 @@
 const http = require('http');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 const { URL } = require('url');
 const { adaptAgentToDashboard } = require('./dashboardAdapter');
 
@@ -368,6 +369,27 @@ function handleGetHealth(req, res) {
   }));
 }
 
+/**
+ * Resolve the local operating system username.
+ */
+function resolveUsername() {
+  try {
+    const userInfo = os.userInfo();
+    if (userInfo && userInfo.username) {
+      return userInfo.username;
+    }
+  } catch (err) {
+    // Ignore error
+  }
+  return process.env.USER || process.env.USERNAME || process.env.User || 'User';
+}
+
+function handleGetProfile(req, res) {
+  const username = resolveUsername();
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify({ username }));
+}
+
 /** Route table: "METHOD /path" → handler */
 const apiRoutes = {
   'GET /api/events': handleSSE,
@@ -376,6 +398,7 @@ const apiRoutes = {
   'GET /api/sessions': handleGetSessions,
   'GET /api/heatmap': handleGetHeatmap,
   'GET /api/health': handleGetHealth,
+  'GET /api/profile': handleGetProfile,
 };
 
 /**

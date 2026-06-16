@@ -33,6 +33,13 @@ All notable changes to this project will be documented in this file.
 - Updated `TEAM_RULES.md` and `REVIEWS/README.md` to document the router triggers and payload contracts.
 - Added unit tests under `__tests__/agentRunner.test.js` validating all decision routes.
 
+## [2026-06-16] TASK-005: Personalize office floorplan title with local username
+
+- Wrapped the dashboard office panel title in a `<span>` element with ID `officePanelTitle` in `dashboard.html`.
+- Implemented client-side logic in `public/dashboard.js` to asynchronously fetch `/api/profile` and safely set the panel header's text content.
+- Created `GET /api/profile` backend endpoint in `src/dashboard-server.js` to resolve the local OS username using `os.userInfo()` with fallback to env variables (`USER`, `USERNAME`, `User`, or `'User'`).
+- Added unit tests for the `/api/profile` endpoint verifying success and all error fallback paths.
+
 ## [2026-06-16] TASK-006: Add Pixel Agent Desk watcher with visual status and execution handoff
 
 - Implemented `watcher.py` (Python 3) to monitor `TASKS/`, `REVIEWS/`, and `AGENT_STATE.md` using `watchdog`.
