@@ -295,6 +295,81 @@ describe('dashboard-server', () => {
 
       expect(res.writeHead).toHaveBeenCalledWith(503, { 'Content-Type': 'application/json' });
     });
+
+    describe('GET /api/profile', () => {
+      let spyUserInfo;
+      let originalEnv;
+
+      beforeEach(() => {
+        originalEnv = { ...process.env };
+      });
+
+      afterEach(() => {
+        process.env = originalEnv;
+        if (spyUserInfo) {
+          spyUserInfo.mockRestore();
+        }
+      });
+
+      test('returns username from os.userInfo() if available', () => {
+        spyUserInfo = jest.spyOn(require('os'), 'userInfo').mockReturnValue({ username: 'test-os-user' });
+
+        const { req, res } = createMockReqRes('GET', '/api/profile');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body.username).toBe('test-os-user');
+      });
+
+      test('falls back to process.env.USER if os.userInfo() throws', () => {
+        spyUserInfo = jest.spyOn(require('os'), 'userInfo').mockImplementation(() => {
+          throw new Error('OS error');
+        });
+        delete process.env.USERNAME;
+        delete process.env.User;
+        process.env.USER = 'env-user';
+
+        const { req, res } = createMockReqRes('GET', '/api/profile');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body.username).toBe('env-user');
+      });
+
+      test('falls back to process.env.USERNAME if os.userInfo() throws and USER not set', () => {
+        spyUserInfo = jest.spyOn(require('os'), 'userInfo').mockImplementation(() => {
+          throw new Error('OS error');
+        });
+        delete process.env.USER;
+        delete process.env.User;
+        process.env.USERNAME = 'env-username';
+
+        const { req, res } = createMockReqRes('GET', '/api/profile');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body.username).toBe('env-username');
+      });
+
+      test('falls back to User if all lookups fail', () => {
+        spyUserInfo = jest.spyOn(require('os'), 'userInfo').mockImplementation(() => {
+          throw new Error('OS error');
+        });
+        delete process.env.USER;
+        delete process.env.USERNAME;
+        delete process.env.User;
+
+        const { req, res } = createMockReqRes('GET', '/api/profile');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body.username).toBe('User');
+      });
+    });
   });
 
   // ── CORS ──
