@@ -360,6 +360,15 @@ Pixel Agent Desk resolves pricing, token costs, and context window sizes dynamic
 
 Pricing calculations support cached input discounts. Pricing details and context windows are maintained in [src/pricing.js](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/src/pricing.js) with references to official documentation and `updatedAt` metadata.
 
+### Metered API vs. Subscription / TUI Agents
+
+Mainstream API models (like Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, etc.) report granular token consumption via hook events. For these agents, the dashboard displays precise metered API token count, estimated cost, and context window utilization.
+
+Subscription-based tools, local TUI-based agents, and other platforms that do not use pay-per-token API endpoints do not expose precise token count metrics. For these agents:
+- The dashboard displays **"Usage unavailable"** and **"Cost: N/A"** to prevent misleading zeros.
+- The context window indicator shows **`--`** (disabled).
+- Overall KPIs for token totals and costs on the dashboard are reframed to highlight live/idle metered activity, excluding non-metered agents from the totals to avoid skewing the averages.
+
 ---
 
 ## Troubleshooting

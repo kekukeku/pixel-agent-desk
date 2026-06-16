@@ -31,6 +31,7 @@ To prevent state drift between different folders and GitHub PR statuses, this re
 | **TASK-009** | `MERGED` | [task/task_009_editable_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_009.md) | 2026-06-16 |
 | **TASK-010** | `MERGED` | [task/task_010_launch_dashboard_directly](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_010.md) | 2026-06-16 |
 | **TASK-011** | `MERGED` | [task/task_011_default_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_011.md) | 2026-06-16 |
+| **TASK-012** | `MERGED` | [task/task_012_subscription_usage_ui](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_012.md) | 2026-06-16 |
 
 ---
 

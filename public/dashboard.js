@@ -18,6 +18,15 @@ function escapeHtml(str) {
     .replace(/'/g, '&#039;');
 }
 
+function hasMeteredUsage(ag) {
+  if (!ag || !ag.tokenUsage) return false;
+  if (ag.usageAvailable || ag.tokenUsage.usageAvailable) return true;
+  const total = (ag.tokenUsage.inputTokens || 0) + (ag.tokenUsage.outputTokens || 0);
+  if (total > 0 || (ag.tokenUsage.estimatedCost || 0) > 0) return true;
+  if (ag.model && /^(claude|gpt|gemini)/i.test(ag.model)) return true;
+  return false;
+}
+
 const DOM = {
   statusIndicator: document.getElementById('statusIndicator'),
   connectionStatus: document.getElementById('connectionStatus'),
@@ -119,8 +128,14 @@ function recalcStats() {
   state.stats.totalCost = arr.reduce((s, a) => s + (a.tokenUsage?.estimatedCost || 0), 0);
 
   DOM.kpiActiveAgents.innerHTML = `${state.stats.active} <span style="font-size:0.8rem;color:var(--color-text-dark)">/ ${state.stats.total}</span>`;
-  DOM.kpiTokens.textContent = formatNum(state.stats.totalTokens);
-  DOM.kpiCost.textContent = `$${state.stats.totalCost.toFixed(2)}`;
+  
+  const activeCount = arr.filter(a => ['working', 'thinking'].includes(a.status)).length;
+  DOM.kpiTokens.textContent = activeCount > 0 ? 'Live' : 'Idle';
+  DOM.kpiTokens.style.color = activeCount > 0 ? 'var(--color-success)' : 'var(--color-text-muted)';
+
+  DOM.kpiCost.textContent = '--';
+  DOM.kpiCost.style.color = 'var(--color-text)';
+
   DOM.kpiErrors.textContent = state.stats.errorCount.toString();
   if (state.stats.errorCount > 0) DOM.kpiErrors.className = 'kpi-value error';
 }
@@ -159,11 +174,12 @@ function updateAgentUI(ag) {
   const isAct = ['working', 'thinking'].includes(stClass);
   const actText = ag.currentTool ? `<span class="hl">${ag.currentTool}</span>` : (isAct ? stText : 'Idling...');
 
+  const isMetered = hasMeteredUsage(ag);
   const tokens = formatNum((ag.tokenUsage?.inputTokens || 0) + (ag.tokenUsage?.outputTokens || 0));
   const cost = (ag.tokenUsage?.estimatedCost || 0).toFixed(4);
 
   const ctxPct = ag.tokenUsage?.contextPercent;
-  const hasCtx = ctxPct != null;
+  const hasCtx = isMetered && ctxPct != null;
   const ctxColor = !hasCtx ? '' : ctxPct > 85 ? 'ctx-high' : ctxPct > 60 ? 'ctx-mid' : 'ctx-low';
   const ctxValText = hasCtx ? `~${ctxPct}%` : '--';
 
@@ -193,6 +209,12 @@ function updateAgentUI(ag) {
     : `<span class="mc-agent-name-text">${escapeHtml(ag.name || 'Agent')}</span>
        <button class="mc-name-edit-btn" title="Edit Name" style="background: none; border: none; padding: 0 4px; cursor: pointer; color: #8b949e; font-size: 0.75rem; vertical-align: middle;">✎</button>`;
 
+  const metricsHtml = isMetered
+    ? `<span>TX: <span class="mc-metric-val">${tokens}</span> tok</span>
+       <span>$<span class="mc-metric-val">${cost}</span></span>`
+    : `<span>Usage unavailable</span>
+       <span>Cost: <span class="mc-metric-val">N/A</span></span>`;
+
   const html = `
     <div class="mc-agent-header">
       <div class="mc-agent-name">${nameContent} ${typeHtml}</div>
@@ -201,10 +223,9 @@ function updateAgentUI(ag) {
     <div class="mc-agent-activity">CMD> ${actText}</div>
     ${timelineHtml}
     <div class="mc-agent-metrics">
-      <span>TX: <span class="mc-metric-val">${tokens}</span> tok</span>
-      <span>$<span class="mc-metric-val">${cost}</span></span>
+      ${metricsHtml}
     </div>
-    <div class="mc-context-gauge" title="Approximate context window usage (estimated from input tokens)">
+    <div class="mc-context-gauge ${!hasCtx ? 'disabled' : ''}" title="Approximate context window usage (estimated from input tokens)">
       <span class="ctx-label">~ctx</span>
       <div class="ctx-track"><div class="ctx-fill ${ctxColor}" style="width:${hasCtx ? ctxPct : 0}%"></div></div>
       <span class="ctx-val">${ctxValText}</span>
@@ -295,7 +316,11 @@ function showOfficePopover(canvas, char) {
   const outputTok = (ag && ag.tokenUsage?.outputTokens) || 0;
   const cost = (ag && ag.tokenUsage?.estimatedCost) || 0;
   const ctxPct = (ag && ag.tokenUsage?.contextPercent);
-  const ctxText = ctxPct != null ? `~${ctxPct}%` : '-';
+
+  const isMetered = hasMeteredUsage(ag);
+  const tokensVal = isMetered ? formatNum(inputTok + outputTok) : 'Usage unavailable';
+  const costVal = isMetered ? `$${cost.toFixed(4)}` : 'N/A';
+  const ctxValText = isMetered && ctxPct != null ? `~${ctxPct}%` : '-';
 
   popoverEl.innerHTML = `
     <div class="pop-header">
@@ -305,9 +330,9 @@ function showOfficePopover(canvas, char) {
     <div class="pop-row"><span>Project</span><span class="pop-val">${project}</span></div>
     <div class="pop-row"><span>Tool</span><span class="pop-val">${tool}</span></div>
     <div class="pop-row"><span>Model</span><span class="pop-val">${model}</span></div>
-    <div class="pop-row"><span>Tokens</span><span class="pop-val">${formatNum(inputTok + outputTok)}</span></div>
-    <div class="pop-row"><span>Cost</span><span class="pop-val">$${cost.toFixed(4)}</span></div>
-    <div class="pop-row"><span>Context</span><span class="pop-val">${ctxText}</span></div>
+    <div class="pop-row"><span>Tokens</span><span class="pop-val">${tokensVal}</span></div>
+    <div class="pop-row"><span>Cost</span><span class="pop-val">${costVal}</span></div>
+    <div class="pop-row"><span>Context</span><span class="pop-val">${ctxValText}</span></div>
   `;
   popoverEl.style.display = 'block';
 
@@ -562,18 +587,48 @@ async function renderUsageView() {
     tSes += d.sessions || 0;
   });
 
-  document.getElementById('uTotalTokens').textContent = formatNum(tTok);
-  document.getElementById('uTotalCost').textContent = `$${tCost.toFixed(2)}`;
+  const hasMeteredData = tTok > 0 || tCost > 0;
+
+  document.getElementById('uTotalTokens').textContent = hasMeteredData ? formatNum(tTok) : 'N/A';
+  document.getElementById('uTotalCost').textContent = hasMeteredData ? `$${tCost.toFixed(2)}` : 'N/A';
   document.getElementById('uTotalTools').textContent = formatNum(tTool);
   document.getElementById('uTotalSessions').textContent = formatNum(tSes);
 
-  const tChart = aggChart(days, mode, d => (d.inputTokens || 0) + (d.outputTokens || 0));
-  const cChart = aggChart(days, mode, d => d.estimatedCost || 0);
+  if (hasMeteredData) {
+    const tChart = aggChart(days, mode, d => (d.inputTokens || 0) + (d.outputTokens || 0));
+    const cChart = aggChart(days, mode, d => d.estimatedCost || 0);
 
-  document.getElementById('chartTokensRoot').innerHTML = buildBars(tChart, 'tokens');
-  document.getElementById('chartCostRoot').innerHTML = buildBars(cChart, 'cost', true);
+    document.getElementById('chartTokensRoot').innerHTML = buildBars(tChart, 'tokens');
+    document.getElementById('chartCostRoot').innerHTML = buildBars(cChart, 'cost', true);
 
-  renderModelBreakdown(days);
+    document.getElementById('chartTokensRoot').parentElement.style.display = 'block';
+    document.getElementById('chartCostRoot').parentElement.style.display = 'block';
+
+    const emptyStateEl = document.getElementById('usageEmptyState');
+    if (emptyStateEl) emptyStateEl.style.display = 'none';
+
+    renderModelBreakdown(days);
+  } else {
+    document.getElementById('chartTokensRoot').parentElement.style.display = 'none';
+    document.getElementById('chartCostRoot').parentElement.style.display = 'none';
+    document.getElementById('modelBreakdownRoot').style.display = 'none';
+
+    let emptyStateEl = document.getElementById('usageEmptyState');
+    if (!emptyStateEl) {
+      emptyStateEl = document.createElement('div');
+      emptyStateEl.id = 'usageEmptyState';
+      emptyStateEl.className = 'panel usage-empty-state';
+      emptyStateEl.style.padding = '32px';
+      emptyStateEl.style.textAlign = 'center';
+      emptyStateEl.style.color = 'var(--color-text-muted)';
+      emptyStateEl.style.fontSize = '0.9rem';
+      emptyStateEl.style.marginTop = '24px';
+      emptyStateEl.style.borderColor = 'var(--color-border)';
+      document.getElementById('usageView').appendChild(emptyStateEl);
+    }
+    emptyStateEl.textContent = 'No metered API usage reported. Subscription and TUI agents may not expose token totals.';
+    emptyStateEl.style.display = 'block';
+  }
 }
 
 function aggChart(days, mode, valFn) {

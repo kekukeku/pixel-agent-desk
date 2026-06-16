@@ -1,0 +1,364 @@
+diff --git a/.gitignore b/.gitignore
+index 6b7cf7d..540eb4c 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -9,6 +9,7 @@ release/
+ 
+ # OS files
+ .DS_Store
++Icon?
+ Thumbs.db
+ Desktop.ini
+ ehthumbs.db
+diff --git a/AGENT_STATE.md b/AGENT_STATE.md
+index 5f4d68b..937770b 100644
+--- a/AGENT_STATE.md
++++ b/AGENT_STATE.md
+@@ -31,6 +31,7 @@ To prevent state drift between different folders and GitHub PR statuses, this re
+ | **TASK-009** | `MERGED` | [task/task_009_editable_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_009.md) | 2026-06-16 |
+ | **TASK-010** | `MERGED` | [task/task_010_launch_dashboard_directly](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_010.md) | 2026-06-16 |
+ | **TASK-011** | `MERGED` | [task/task_011_default_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_011.md) | 2026-06-16 |
++| **TASK-012** | `UNDER_REVIEW` | [task/task_012_subscription_usage_ui](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_012.md) | 2026-06-16 |
+ 
+ ---
+ 
+diff --git a/README.md b/README.md
+index 6dc5689..dc2d869 100644
+--- a/README.md
++++ b/README.md
+@@ -360,6 +360,15 @@ Pixel Agent Desk resolves pricing, token costs, and context window sizes dynamic
+ 
+ Pricing calculations support cached input discounts. Pricing details and context windows are maintained in [src/pricing.js](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/src/pricing.js) with references to official documentation and `updatedAt` metadata.
+ 
++### Metered API vs. Subscription / TUI Agents
++
++Mainstream API models (like Anthropic Claude, OpenAI GPT, Google Gemini, xAI Grok, etc.) report granular token consumption via hook events. For these agents, the dashboard displays precise metered API token count, estimated cost, and context window utilization.
++
++Subscription-based tools, local TUI-based agents, and other platforms that do not use pay-per-token API endpoints do not expose precise token count metrics. For these agents:
++- The dashboard displays **"Usage unavailable"** and **"Cost: N/A"** to prevent misleading zeros.
++- The context window indicator shows **`--`** (disabled).
++- Overall KPIs for token totals and costs on the dashboard are reframed to highlight live/idle metered activity, excluding non-metered agents from the totals to avoid skewing the averages.
++
+ ---
+ 
+ ## Troubleshooting
+diff --git a/__tests__/dashboard-server.test.js b/__tests__/dashboard-server.test.js
+index 95e2c85..3c0c021 100644
+--- a/__tests__/dashboard-server.test.js
++++ b/__tests__/dashboard-server.test.js
+@@ -20,13 +20,24 @@ jest.mock('http', () => {
+ });
+ 
+ jest.mock('../src/dashboardAdapter', () => ({
+-  adaptAgentToDashboard: jest.fn((agent) => ({
+-    id: agent.id || agent.sessionId,
+-    name: agent.displayName || 'Agent',
+-    status: agent.state ? agent.state.toLowerCase() : 'idle',
+-    type: agent.isSubagent ? 'subagent' : agent.isTeammate ? 'teammate' : 'main',
+-    tokenUsage: agent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
+-  })),
++  adaptAgentToDashboard: jest.fn((agent) => {
++    const hasUsage = !!(
++      agent.tokenUsage && (
++        agent.tokenUsage.usageAvailable ||
++        agent.tokenUsage.inputTokens > 0 ||
++        agent.tokenUsage.outputTokens > 0 ||
++        (agent.model && /^(claude|gpt|gemini)/i.test(agent.model))
++      )
++    );
++    return {
++      id: agent.id || agent.sessionId,
++      name: agent.displayName || 'Agent',
++      status: agent.state ? agent.state.toLowerCase() : 'idle',
++      type: agent.isSubagent ? 'subagent' : agent.isTeammate ? 'teammate' : 'main',
++      tokenUsage: agent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
++      usageAvailable: hasUsage,
++    };
++  }),
+ }));
+ 
+ const EventEmitter = require('events');
+@@ -200,6 +211,22 @@ describe('dashboard-server', () => {
+       expect(body[0].id).toBe('agent-1');
+     });
+ 
++    test('GET /api/agents returns agent list with correct usageAvailable flag', () => {
++      const { req, res } = createMockReqRes('GET', '/api/agents');
++      mgr._agents.push(
++        { id: 'agent-2', sessionId: 'agent-2', state: 'Working', displayName: 'Test 2', projectPath: '/p/app', tokenUsage: { inputTokens: 500, outputTokens: 100, estimatedCost: 0.002 } }
++      );
++      handler(req, res);
++
++      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
++      const body = JSON.parse(res.end.mock.calls[0][0]);
++      expect(body).toHaveLength(2);
++      const a1 = body.find(a => a.id === 'agent-1');
++      expect(a1.usageAvailable).toBe(false);
++      const a2 = body.find(a => a.id === 'agent-2');
++      expect(a2.usageAvailable).toBe(true);
++    });
++
+     test('GET /api/agents/:id returns single agent with sessionStats', () => {
+       const mockScanner = {
+         getSessionStats: jest.fn(() => ({ tokens: 999 })),
+diff --git a/__tests__/dashboardAdapter.test.js b/__tests__/dashboardAdapter.test.js
+index 88002f3..2a4277b 100644
+--- a/__tests__/dashboardAdapter.test.js
++++ b/__tests__/dashboardAdapter.test.js
+@@ -79,6 +79,7 @@ describe('dashboardAdapter', () => {
+       expect(result.metadata.isSubagent).toBe(false);
+       expect(result.metadata.permissionMode).toBe('default');
+       expect(result.metadata.source).toBe('pixel-agent-desk');
++      expect(result.usageAvailable).toBe(true);
+       expect(result.timing.elapsed).toBeGreaterThan(0);
+       expect(result.timing.active).toBe(true);
+     });
+@@ -110,6 +111,7 @@ describe('dashboardAdapter', () => {
+       expect(result.lastMessage).toBeNull();
+       expect(result.avatarIndex).toBeNull();
+       expect(result.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0, estimatedCost: 0 });
++      expect(result.usageAvailable).toBe(false);
+       expect(result.metadata.parentId).toBeNull();
+     });
+ 
+diff --git a/dashboard.html b/dashboard.html
+index 9809d09..44cf491 100644
+--- a/dashboard.html
++++ b/dashboard.html
+@@ -48,7 +48,7 @@
+             <line x1="12" y1="20" x2="12" y2="4"></line>
+             <line x1="6" y1="20" x2="6" y2="14"></line>
+           </svg>
+-          Token Usage
++          Metered API Usage
+         </button>
+       </nav>
+       <div class="sidebar-footer">
+@@ -84,11 +84,11 @@
+               </div>
+             </div>
+             <div class="kpi-card panel">
+-              <div class="kpi-title">Token Burn (Session)</div>
++              <div class="kpi-title">Session Activity</div>
+               <div class="kpi-value purple" id="kpiTokens">0</div>
+             </div>
+             <div class="kpi-card panel">
+-              <div class="kpi-title">Est. Cost Lifecycle</div>
++              <div class="kpi-title">Tasks Today</div>
+               <div class="kpi-value" id="kpiCost">$0.00</div>
+             </div>
+             <div class="kpi-card panel">
+@@ -171,6 +171,11 @@
+ 
+         <!-- =================== USAGE VIEW =================== -->
+         <div id="usageView" class="view-section">
++          <div class="usage-info-banner panel" style="padding: 12px 16px; margin-bottom: 16px; font-size: 0.8rem; line-height: 1.4; border-color: rgba(47, 129, 247, 0.3); background: rgba(47, 129, 247, 0.05); color: var(--color-text-muted);">
++            <div style="font-weight: 600; color: var(--color-text); margin-bottom: 4px;">Metered API Usage Information</div>
++            API-backed agents can report precise token totals and cost metrics. Subscription and TUI agents (such as Codex, Antigravity, and Grok Build) may not expose token totals, meaning their usage data is unavailable rather than zero.
++          </div>
++
+           <div class="usage-controls">
+             <button class="usage-btn active" data-umode="weeks">Last 12 Weeks</button>
+             <button class="usage-btn" data-umode="months">Last 12 Months</button>
+diff --git a/public/dashboard.css b/public/dashboard.css
+index 5a8da7c..3391ca6 100644
+--- a/public/dashboard.css
++++ b/public/dashboard.css
+@@ -502,6 +502,10 @@ body {
+   padding-top: 6px;
+ }
+ 
++.mc-context-gauge.disabled {
++  opacity: 0.35;
++}
++
+ .mc-context-gauge .ctx-label {
+   font-family: var(--font-mono);
+   font-style: italic;
+diff --git a/public/dashboard.js b/public/dashboard.js
+index 012159e..a05acbe 100644
+--- a/public/dashboard.js
++++ b/public/dashboard.js
+@@ -18,6 +18,15 @@ function escapeHtml(str) {
+     .replace(/'/g, '&#039;');
+ }
+ 
++function hasMeteredUsage(ag) {
++  if (!ag || !ag.tokenUsage) return false;
++  if (ag.usageAvailable || ag.tokenUsage.usageAvailable) return true;
++  const total = (ag.tokenUsage.inputTokens || 0) + (ag.tokenUsage.outputTokens || 0);
++  if (total > 0 || (ag.tokenUsage.estimatedCost || 0) > 0) return true;
++  if (ag.model && /^(claude|gpt|gemini)/i.test(ag.model)) return true;
++  return false;
++}
++
+ const DOM = {
+   statusIndicator: document.getElementById('statusIndicator'),
+   connectionStatus: document.getElementById('connectionStatus'),
+@@ -119,8 +128,14 @@ function recalcStats() {
+   state.stats.totalCost = arr.reduce((s, a) => s + (a.tokenUsage?.estimatedCost || 0), 0);
+ 
+   DOM.kpiActiveAgents.innerHTML = `${state.stats.active} <span style="font-size:0.8rem;color:var(--color-text-dark)">/ ${state.stats.total}</span>`;
+-  DOM.kpiTokens.textContent = formatNum(state.stats.totalTokens);
+-  DOM.kpiCost.textContent = `$${state.stats.totalCost.toFixed(2)}`;
++  
++  const activeCount = arr.filter(a => ['working', 'thinking'].includes(a.status)).length;
++  DOM.kpiTokens.textContent = activeCount > 0 ? 'Live' : 'Idle';
++  DOM.kpiTokens.style.color = activeCount > 0 ? 'var(--color-success)' : 'var(--color-text-muted)';
++
++  DOM.kpiCost.textContent = '--';
++  DOM.kpiCost.style.color = 'var(--color-text)';
++
+   DOM.kpiErrors.textContent = state.stats.errorCount.toString();
+   if (state.stats.errorCount > 0) DOM.kpiErrors.className = 'kpi-value error';
+ }
+@@ -159,11 +174,12 @@ function updateAgentUI(ag) {
+   const isAct = ['working', 'thinking'].includes(stClass);
+   const actText = ag.currentTool ? `<span class="hl">${ag.currentTool}</span>` : (isAct ? stText : 'Idling...');
+ 
++  const isMetered = hasMeteredUsage(ag);
+   const tokens = formatNum((ag.tokenUsage?.inputTokens || 0) + (ag.tokenUsage?.outputTokens || 0));
+   const cost = (ag.tokenUsage?.estimatedCost || 0).toFixed(4);
+ 
+   const ctxPct = ag.tokenUsage?.contextPercent;
+-  const hasCtx = ctxPct != null;
++  const hasCtx = isMetered && ctxPct != null;
+   const ctxColor = !hasCtx ? '' : ctxPct > 85 ? 'ctx-high' : ctxPct > 60 ? 'ctx-mid' : 'ctx-low';
+   const ctxValText = hasCtx ? `~${ctxPct}%` : '--';
+ 
+@@ -193,6 +209,12 @@ function updateAgentUI(ag) {
+     : `<span class="mc-agent-name-text">${escapeHtml(ag.name || 'Agent')}</span>
+        <button class="mc-name-edit-btn" title="Edit Name" style="background: none; border: none; padding: 0 4px; cursor: pointer; color: #8b949e; font-size: 0.75rem; vertical-align: middle;">✎</button>`;
+ 
++  const metricsHtml = isMetered
++    ? `<span>TX: <span class="mc-metric-val">${tokens}</span> tok</span>
++       <span>$<span class="mc-metric-val">${cost}</span></span>`
++    : `<span>Usage unavailable</span>
++       <span>Cost: <span class="mc-metric-val">N/A</span></span>`;
++
+   const html = `
+     <div class="mc-agent-header">
+       <div class="mc-agent-name">${nameContent} ${typeHtml}</div>
+@@ -201,10 +223,9 @@ function updateAgentUI(ag) {
+     <div class="mc-agent-activity">CMD> ${actText}</div>
+     ${timelineHtml}
+     <div class="mc-agent-metrics">
+-      <span>TX: <span class="mc-metric-val">${tokens}</span> tok</span>
+-      <span>$<span class="mc-metric-val">${cost}</span></span>
++      ${metricsHtml}
+     </div>
+-    <div class="mc-context-gauge" title="Approximate context window usage (estimated from input tokens)">
++    <div class="mc-context-gauge ${!hasCtx ? 'disabled' : ''}" title="Approximate context window usage (estimated from input tokens)">
+       <span class="ctx-label">~ctx</span>
+       <div class="ctx-track"><div class="ctx-fill ${ctxColor}" style="width:${hasCtx ? ctxPct : 0}%"></div></div>
+       <span class="ctx-val">${ctxValText}</span>
+@@ -295,7 +316,11 @@ function showOfficePopover(canvas, char) {
+   const outputTok = (ag && ag.tokenUsage?.outputTokens) || 0;
+   const cost = (ag && ag.tokenUsage?.estimatedCost) || 0;
+   const ctxPct = (ag && ag.tokenUsage?.contextPercent);
+-  const ctxText = ctxPct != null ? `~${ctxPct}%` : '-';
++
++  const isMetered = hasMeteredUsage(ag);
++  const tokensVal = isMetered ? formatNum(inputTok + outputTok) : 'Usage unavailable';
++  const costVal = isMetered ? `$${cost.toFixed(4)}` : 'N/A';
++  const ctxValText = isMetered && ctxPct != null ? `~${ctxPct}%` : '-';
+ 
+   popoverEl.innerHTML = `
+     <div class="pop-header">
+@@ -305,9 +330,9 @@ function showOfficePopover(canvas, char) {
+     <div class="pop-row"><span>Project</span><span class="pop-val">${project}</span></div>
+     <div class="pop-row"><span>Tool</span><span class="pop-val">${tool}</span></div>
+     <div class="pop-row"><span>Model</span><span class="pop-val">${model}</span></div>
+-    <div class="pop-row"><span>Tokens</span><span class="pop-val">${formatNum(inputTok + outputTok)}</span></div>
+-    <div class="pop-row"><span>Cost</span><span class="pop-val">$${cost.toFixed(4)}</span></div>
+-    <div class="pop-row"><span>Context</span><span class="pop-val">${ctxText}</span></div>
++    <div class="pop-row"><span>Tokens</span><span class="pop-val">${tokensVal}</span></div>
++    <div class="pop-row"><span>Cost</span><span class="pop-val">${costVal}</span></div>
++    <div class="pop-row"><span>Context</span><span class="pop-val">${ctxValText}</span></div>
+   `;
+   popoverEl.style.display = 'block';
+ 
+@@ -562,18 +587,48 @@ async function renderUsageView() {
+     tSes += d.sessions || 0;
+   });
+ 
+-  document.getElementById('uTotalTokens').textContent = formatNum(tTok);
+-  document.getElementById('uTotalCost').textContent = `$${tCost.toFixed(2)}`;
++  const hasMeteredData = tTok > 0 || tCost > 0;
++
++  document.getElementById('uTotalTokens').textContent = hasMeteredData ? formatNum(tTok) : 'N/A';
++  document.getElementById('uTotalCost').textContent = hasMeteredData ? `$${tCost.toFixed(2)}` : 'N/A';
+   document.getElementById('uTotalTools').textContent = formatNum(tTool);
+   document.getElementById('uTotalSessions').textContent = formatNum(tSes);
+ 
+-  const tChart = aggChart(days, mode, d => (d.inputTokens || 0) + (d.outputTokens || 0));
+-  const cChart = aggChart(days, mode, d => d.estimatedCost || 0);
++  if (hasMeteredData) {
++    const tChart = aggChart(days, mode, d => (d.inputTokens || 0) + (d.outputTokens || 0));
++    const cChart = aggChart(days, mode, d => d.estimatedCost || 0);
++
++    document.getElementById('chartTokensRoot').innerHTML = buildBars(tChart, 'tokens');
++    document.getElementById('chartCostRoot').innerHTML = buildBars(cChart, 'cost', true);
++
++    document.getElementById('chartTokensRoot').parentElement.style.display = 'block';
++    document.getElementById('chartCostRoot').parentElement.style.display = 'block';
+ 
+-  document.getElementById('chartTokensRoot').innerHTML = buildBars(tChart, 'tokens');
+-  document.getElementById('chartCostRoot').innerHTML = buildBars(cChart, 'cost', true);
++    const emptyStateEl = document.getElementById('usageEmptyState');
++    if (emptyStateEl) emptyStateEl.style.display = 'none';
+ 
+-  renderModelBreakdown(days);
++    renderModelBreakdown(days);
++  } else {
++    document.getElementById('chartTokensRoot').parentElement.style.display = 'none';
++    document.getElementById('chartCostRoot').parentElement.style.display = 'none';
++    document.getElementById('modelBreakdownRoot').style.display = 'none';
++
++    let emptyStateEl = document.getElementById('usageEmptyState');
++    if (!emptyStateEl) {
++      emptyStateEl = document.createElement('div');
++      emptyStateEl.id = 'usageEmptyState';
++      emptyStateEl.className = 'panel usage-empty-state';
++      emptyStateEl.style.padding = '32px';
++      emptyStateEl.style.textAlign = 'center';
++      emptyStateEl.style.color = 'var(--color-text-muted)';
++      emptyStateEl.style.fontSize = '0.9rem';
++      emptyStateEl.style.marginTop = '24px';
++      emptyStateEl.style.borderColor = 'var(--color-border)';
++      document.getElementById('usageView').appendChild(emptyStateEl);
++    }
++    emptyStateEl.textContent = 'No metered API usage reported. Subscription and TUI agents may not expose token totals.';
++    emptyStateEl.style.display = 'block';
++  }
+ }
+ 
+ function aggChart(days, mode, valFn) {
+diff --git a/src/dashboardAdapter.js b/src/dashboardAdapter.js
+index 442df44..d0eb340 100644
+--- a/src/dashboardAdapter.js
++++ b/src/dashboardAdapter.js
+@@ -78,6 +78,15 @@ function isAgentActive(state) {
+  * @returns {Object} Dashboard formatted agent
+  */
+ function adaptAgentToDashboard(pixelAgent) {
++  const hasUsage = !!(
++    pixelAgent.tokenUsage && (
++      pixelAgent.tokenUsage.usageAvailable ||
++      pixelAgent.tokenUsage.inputTokens > 0 ||
++      pixelAgent.tokenUsage.outputTokens > 0 ||
++      (pixelAgent.model && /^(claude|gpt|gemini)/i.test(pixelAgent.model))
++    )
++  );
++
+   return {
+     id: pixelAgent.id || pixelAgent.sessionId,
+     sessionId: pixelAgent.sessionId,
+@@ -87,6 +96,7 @@ function adaptAgentToDashboard(pixelAgent) {
+     type: determineAgentType(pixelAgent),
+     model: pixelAgent.model || null,
+     tokenUsage: pixelAgent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
++    usageAvailable: hasUsage,
+     currentTool: pixelAgent.currentTool || null,
+     lastMessage: pixelAgent.lastMessage || null,
+     avatarIndex: pixelAgent.avatarIndex !== undefined ? pixelAgent.avatarIndex : null,

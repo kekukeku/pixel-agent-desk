@@ -78,6 +78,15 @@ function isAgentActive(state) {
  * @returns {Object} Dashboard formatted agent
  */
 function adaptAgentToDashboard(pixelAgent) {
+  const hasUsage = !!(
+    pixelAgent.tokenUsage && (
+      pixelAgent.tokenUsage.usageAvailable ||
+      pixelAgent.tokenUsage.inputTokens > 0 ||
+      pixelAgent.tokenUsage.outputTokens > 0 ||
+      (pixelAgent.model && /^(claude|gpt|gemini)/i.test(pixelAgent.model))
+    )
+  );
+
   return {
     id: pixelAgent.id || pixelAgent.sessionId,
     sessionId: pixelAgent.sessionId,
@@ -87,6 +96,7 @@ function adaptAgentToDashboard(pixelAgent) {
     type: determineAgentType(pixelAgent),
     model: pixelAgent.model || null,
     tokenUsage: pixelAgent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
+    usageAvailable: hasUsage,
     currentTool: pixelAgent.currentTool || null,
     lastMessage: pixelAgent.lastMessage || null,
     avatarIndex: pixelAgent.avatarIndex !== undefined ? pixelAgent.avatarIndex : null,

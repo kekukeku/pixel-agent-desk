@@ -79,6 +79,7 @@ describe('dashboardAdapter', () => {
       expect(result.metadata.isSubagent).toBe(false);
       expect(result.metadata.permissionMode).toBe('default');
       expect(result.metadata.source).toBe('pixel-agent-desk');
+      expect(result.usageAvailable).toBe(true);
       expect(result.timing.elapsed).toBeGreaterThan(0);
       expect(result.timing.active).toBe(true);
     });
@@ -110,6 +111,7 @@ describe('dashboardAdapter', () => {
       expect(result.lastMessage).toBeNull();
       expect(result.avatarIndex).toBeNull();
       expect(result.tokenUsage).toEqual({ inputTokens: 0, outputTokens: 0, estimatedCost: 0 });
+      expect(result.usageAvailable).toBe(false);
       expect(result.metadata.parentId).toBeNull();
     });
 

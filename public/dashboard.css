@@ -502,6 +502,10 @@ body {
   padding-top: 6px;
 }
 
+.mc-context-gauge.disabled {
+  opacity: 0.35;
+}
+
 .mc-context-gauge .ctx-label {
   font-family: var(--font-mono);
   font-style: italic;

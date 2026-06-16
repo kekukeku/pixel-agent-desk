@@ -20,13 +20,24 @@ jest.mock('http', () => {
 });
 
 jest.mock('../src/dashboardAdapter', () => ({
-  adaptAgentToDashboard: jest.fn((agent) => ({
-    id: agent.id || agent.sessionId,
-    name: agent.displayName || 'Agent',
-    status: agent.state ? agent.state.toLowerCase() : 'idle',
-    type: agent.isSubagent ? 'subagent' : agent.isTeammate ? 'teammate' : 'main',
-    tokenUsage: agent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
-  })),
+  adaptAgentToDashboard: jest.fn((agent) => {
+    const hasUsage = !!(
+      agent.tokenUsage && (
+        agent.tokenUsage.usageAvailable ||
+        agent.tokenUsage.inputTokens > 0 ||
+        agent.tokenUsage.outputTokens > 0 ||
+        (agent.model && /^(claude|gpt|gemini)/i.test(agent.model))
+      )
+    );
+    return {
+      id: agent.id || agent.sessionId,
+      name: agent.displayName || 'Agent',
+      status: agent.state ? agent.state.toLowerCase() : 'idle',
+      type: agent.isSubagent ? 'subagent' : agent.isTeammate ? 'teammate' : 'main',
+      tokenUsage: agent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
+      usageAvailable: hasUsage,
+    };
+  }),
 }));
 
 const EventEmitter = require('events');
@@ -198,6 +209,22 @@ describe('dashboard-server', () => {
       const body = JSON.parse(res.end.mock.calls[0][0]);
       expect(body).toHaveLength(1);
       expect(body[0].id).toBe('agent-1');
+    });
+
+    test('GET /api/agents returns agent list with correct usageAvailable flag', () => {
+      const { req, res } = createMockReqRes('GET', '/api/agents');
+      mgr._agents.push(
+        { id: 'agent-2', sessionId: 'agent-2', state: 'Working', displayName: 'Test 2', projectPath: '/p/app', tokenUsage: { inputTokens: 500, outputTokens: 100, estimatedCost: 0.002 } }
+      );
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body).toHaveLength(2);
+      const a1 = body.find(a => a.id === 'agent-1');
+      expect(a1.usageAvailable).toBe(false);
+      const a2 = body.find(a => a.id === 'agent-2');
+      expect(a2.usageAvailable).toBe(true);
     });
 
     test('GET /api/agents/:id returns single agent with sessionStats', () => {

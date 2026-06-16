@@ -18,12 +18,29 @@ The development and merging process is governed by a logical and physical separa
 +-------------------------------------------------------------+
 |              CODEX (Layer 1: Planner)                       |
 |  - Analyzes requirements & writes TASKS/task_NNN.md         |
+|    as DRAFT                                                 |
 |  - Registers tasks in AGENT_STATE.md Central Registry       |
 |  - Write-restricted to TASKS/, AGENT_STATE.md,              |
 |    and colleagueview/ only                                  |
 +-------------------------------------------------------------+
                                 |
-                                | Task Specification Ready
+                                | Draft Task Specification
+                                v
++-------------------------------------------------------------+
+|             GROK BUILD (Layer 2: Advisory)                  |
+|  - Reviews the draft task before implementation             |
+|  - Writes non-binding planning advice to REVIEWS/           |
++-------------------------------------------------------------+
+                                |
+                                | Planning Advice
+                                v
++-------------------------------------------------------------+
+|              CODEX (Layer 1: Finalizer)                     |
+|  - Accepts, rejects, or adapts Grok advice at own judgment  |
+|  - Finalizes task and moves it to IN_PROGRESS               |
++-------------------------------------------------------------+
+                                |
+                                | Final Task Specification Ready
                                 v
 +-------------------------------------------------------------+
 |          ANTIGRAVITY (Layer 3: Executor)                    |
@@ -60,8 +77,8 @@ The development and merging process is governed by a logical and physical separa
 
 | Component | Layer / Role | Function & Boundaries |
 | :--- | :--- | :--- |
-| **Codex** | Layer 1: Planner | Gathers context, increments task indices, writes specifications to `TASKS/task_NNN.md`, and updates `AGENT_STATE.md` with `DRAFT` status. May also write retrospective colleague feedback to `colleagueview/`. **Cannot write to codebase source files or `REVIEWS/` unless explicitly authorized by the human operator**. |
-| **Grok Build** | Layer 2: Reviewer | Evaluates code quality and writes reviews. Produces decision signal (`APPROVE`, `REQUEST_CHANGES`, `REJECT`). May also write retrospective colleague feedback to `colleagueview/`. **Write-restricted to `REVIEWS/` and `colleagueview/` only**. |
+| **Codex** | Layer 1: Planner / Finalizer | Gathers context, increments task indices, writes draft specifications to `TASKS/task_NNN.md`, registers `DRAFT` in `AGENT_STATE.md`, considers Grok Build's planning advice, then finalizes and releases the task by moving it to `IN_PROGRESS`. May also write retrospective colleague feedback to `colleagueview/`. **Cannot write to codebase source files or `REVIEWS/` unless explicitly authorized by the human operator**. |
+| **Grok Build** | Layer 2: Advisory / Reviewer | First gives non-binding planning advice on draft tasks, then later performs formal implementation review. Formal review produces decision signal (`APPROVE`, `REQUEST_CHANGES`, `REJECT`). May also write retrospective colleague feedback to `colleagueview/`. **Write-restricted to `REVIEWS/` and `colleagueview/` only**. |
 | **Antigravity** | Layer 3: Executor | Implements code changes, creates PRs, runs tests, logs merges in `LOGS/change_log.md`, and executes physical merges once unlocked. May also write retrospective colleague feedback to `colleagueview/`. **Cannot write to `REVIEWS/`**. |
 
 ---
@@ -75,6 +92,7 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
 | **Task ID** | `TASK-NNN` | Standardized ID prefix for tracking, e.g. `TASK-001`. |
 | **Task File** | `TASKS/task_NNN.md` | E.g. `TASKS/task_001.md`. |
 | **Branch Name** | `task/task_NNN_<description>` | E.g. `task/task_001_initialize_governance`. |
+| **Task Advice File** | `REVIEWS/task_advice_NNN.md` | Non-binding Grok Build planning advice for draft tasks, e.g. `REVIEWS/task_advice_001.md`. |
 | **Review Request File** | `REVIEWS/review_request_NNN.md` | E.g. `REVIEWS/review_request_001.md`. |
 | **Review File** | `REVIEWS/review_NNN.md` | E.g. `REVIEWS/review_001.md`. |
 | **Log Entry** | Linked to `TASK-NNN` | Appended directly to `LOGS/change_log.md`. |
@@ -90,8 +108,11 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
 
 ### Local Watcher State Contract
 
-- Codex may create tasks as `DRAFT`. `DRAFT` is planning-only and must not trigger Antigravity.
-- The planner or watcher releases a task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS`.
+- Codex creates new tasks as `DRAFT`. `DRAFT` is planning-only and must not trigger Antigravity.
+- When a task enters `DRAFT`, the watcher must automatically dispatch Grok Build for draft-task advisory.
+- Grok Build writes non-binding planning advice to `REVIEWS/task_advice_NNN.md`. This file is advisory only; it is not a merge gate and must not be treated as the final implementation review.
+- Codex reads `REVIEWS/task_advice_NNN.md`, judges which suggestions to adopt, and remains the final authority for the task specification.
+- Codex releases the finalized task by moving both `TASKS/task_NNN.md` and the `AGENT_STATE.md` row to `IN_PROGRESS`.
 - The watcher dispatches Antigravity only for `IN_PROGRESS` task status changes. It must not dispatch executor work for `DRAFT`.
 - Antigravity must mark implementation complete by moving the task to `UNDER_REVIEW` in `AGENT_STATE.md` (and keeping task metadata aligned). It must not use `COMPLETED`.
 - `UNDER_REVIEW` is the only local state that triggers Grok Build review dispatch.
@@ -100,24 +121,63 @@ To ensure absolute traceability and avoid orphaned files, the following naming c
 
 ## 4. Event-Driven Review Trigger Contract
 
-To automate reviews, Grok Build does not continuously poll. It relies on GitHub event webhooks:
+To automate advisory and review work, Grok Build does not continuously poll. It relies on local watcher triggers and GitHub event webhooks:
 
 ```
-[PR Opened / Synchronized / Labeled "needs-grok-review"]
+[TASKS/task_NNN.md + AGENT_STATE.md -> DRAFT]
                    ↓
-     [GitHub Actions Review Dispatcher]
+        [Local Watcher Advisory Dispatcher]
                    ↓
- [Run Grok Build Runner with Task Spec + Code Diff]
+      [Grok Build writes task_advice_NNN.md]
                    ↓
-    [Output REVIEWS/review_NNN.md back to PR]
+       [Codex finalizes task -> IN_PROGRESS]
                    ↓
-       [Review Decision Router applies handoff]
+          [Antigravity implementation]
+                   ↓
+ [PR Opened / Synchronized / Local UNDER_REVIEW]
+                   ↓
+      [Review Dispatcher / Local Watcher]
+                   ↓
+        [Grok Build writes review_NNN.md]
+                   ↓
+        [Decision Router applies handoff]
 ```
 
-- **Trigger A (Event-based)**: When a PR is `opened` or `synchronized` (new commits pushed), a GitHub Action triggers the Grok Build review runner.
-- **Trigger B (Label-based)**: Manually adding the `needs-grok-review` label to a PR triggers a re-run of the review runner.
-- **Trigger C (Local Runner)**: Antigravity completes implementation by moving `AGENT_STATE.md` to `UNDER_REVIEW`; the local watcher then generates `REVIEWS/review_request_NNN.md`, prepares the diff payload, and dispatches Grok Build.
-- **Trigger D (Decision Router)**: When `REVIEWS/review_NNN.md` appears or changes on a PR branch, `.github/workflows/review-decision-router.yml` parses the decision and routes the next handoff through labels, PR comments, uploaded payload artifacts, and the optional `HANDOFF_ROUTER_ENDPOINT` webhook.
+- **Trigger A (Draft Advisory)**: When Codex creates or updates a task in `DRAFT`, the local watcher dispatches Grok Build for planning advice. Grok Build writes `REVIEWS/task_advice_NNN.md`.
+- **Trigger B (Codex Finalization)**: When `REVIEWS/task_advice_NNN.md` appears, Codex reviews the advice, accepts or rejects suggestions at its own judgment, edits the task if needed, and releases the task by moving it to `IN_PROGRESS`.
+- **Trigger C (Execution Dispatch)**: When a task transitions to `IN_PROGRESS`, the watcher dispatches Antigravity for implementation.
+- **Trigger D (PR Event-based Review)**: When a PR is `opened` or `synchronized` (new commits pushed), a GitHub Action triggers the Grok Build review runner.
+- **Trigger E (Label-based Review)**: Manually adding the `needs-grok-review` label to a PR triggers a re-run of the review runner.
+- **Trigger F (Local Review Runner)**: Antigravity completes implementation by moving `AGENT_STATE.md` to `UNDER_REVIEW`; the local watcher then generates `REVIEWS/review_request_NNN.md`, prepares the diff payload, and dispatches Grok Build.
+- **Trigger G (Decision Router)**: When `REVIEWS/review_NNN.md` appears or changes on a PR branch, `.github/workflows/review-decision-router.yml` parses the decision and routes the next handoff through labels, PR comments, uploaded payload artifacts, and the optional `HANDOFF_ROUTER_ENDPOINT` webhook.
+
+### Draft Advice File Contract
+
+`REVIEWS/task_advice_NNN.md` must include:
+
+```markdown
+# Grok Build Task Advice: TASK-NNN
+
+- **Advisor**: Grok Build
+- **Type**: DRAFT_ADVICE
+
+---
+
+## 1. Summary
+
+[Brief assessment of task clarity, risk, and missing context.]
+
+## 2. Suggested Improvements
+
+- [Suggestion 1]
+- [Suggestion 2]
+
+## 3. Risks / Open Questions
+
+- [Risk or question]
+```
+
+Draft advice is consultative. Codex may adopt all, some, or none of the suggestions, but should keep the final task coherent and defensible before releasing it to `IN_PROGRESS`.
 
 ### GitHub Actions Implementation
 

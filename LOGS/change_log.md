@@ -98,3 +98,13 @@ All notable changes to this project will be documented in this file.
 - Created/updated the local configuration file at `~/.pixel-agent-desk/name-map.json` to assign custom Chinese names to the three default watcher agents: `antigravity` ("小A沐瑤"), `grok-build` ("小B盼兮"), and `codex` ("小C婉清").
 - Removed stale fallback mappings and confirmed JSON validity.
 - Conducted cross-agent retrospective evaluations (`colleagueview/`) for Codex (Layer 1) and Grok Build (Layer 2) for TASK-011.
+
+## [2026-06-16] TASK-012: Make subscription and API usage metrics honest in dashboard UI
+
+- Updated `src/dashboardAdapter.js` to normalize the server-side metrics payload, introducing a `usageAvailable` boolean flag to distinguish between API-metered agents and subscription/TUI agents.
+- Refactored `public/dashboard.js` to utilize a client-side `hasMeteredUsage()` helper to conditionally render roster cards, office popover, and usage graphs.
+- Updated dashboard HTML overview KPI cards to display workflow-oriented stats (`Active Agents`, `Session Activity`, `Tasks Today`, `Errors (24h)`) instead of confusing metered cost metrics.
+- Re-labeled and redesigned the Token Usage page to "Metered API Usage", including clear copy about unmetered/subscription agents and displaying an explicit empty state instead of misleading `$0.00` values.
+- Updated `public/dashboard.css` to visually disable elements (e.g. context gauge showing `--`) when usage metrics are unavailable.
+- Documented the distinction between metered API usage and subscription/TUI usage in `README.md`.
+- Expanded test suites in `__tests__/dashboard-server.test.js` to verify usage availability logic and mock responses.
