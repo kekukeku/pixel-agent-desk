@@ -13,6 +13,7 @@
     "dashboard": "node src/dashboard-server.js",
     "reviewer-adapter": "node agent-runner/reviewer-adapter-server.js",
     "workflow": "bash scripts/start_pixel_workflow.sh",
+    "generate-review-diff": "node agent-runner/generate-review-diff.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"__tests__/**/*.js\"",
