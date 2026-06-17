@@ -9,7 +9,7 @@
 - **Branch**: `task/task_022_review_audit_rules_and_tone`
 - **PR URL**: `N/A`
 - **Linked Advice**: [groupchat_022.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/PLANNING/groupchat_022.md)
-- **Linked Review**: `TBD`
+- **Linked Review**: [review_request_022.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_request_022.md)
 - **Dependencies**: [TASK-019](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_019.md), [TASK-021](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_021.md)
 
 ---
