@@ -20,26 +20,6 @@ To prevent state drift between different folders and GitHub PR statuses, this re
 
 | Task ID | State | Linked PR / Branch | Last Updated |
 | :--- | :--- | :--- | :--- |
-| **TASK-001** | `MERGED` | [task/task_001_initialize_governance](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_001.md) | 2026-06-16 |
-| **TASK-002** | `MERGED` | [task/task_002_provider_agnostic_agent_events](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_002.md) | 2026-06-16 |
-| **TASK-003** | `MERGED` | [task/task_003_governance_retrospective_rules](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_003.md) | 2026-06-16 |
-| **TASK-004** | `MERGED` | [task/task_004_review_decision_router](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_004.md) | 2026-06-16 |
-| **TASK-005** | `MERGED` | [task/task_005_username_office_title](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_005.md) | 2026-06-16 |
-| **TASK-006** | `MERGED` | [task/task_006_pixel_agent_desk_watcher](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_006.md) | 2026-06-16 |
-| **TASK-007** | `MERGED` | [task/task_007_watcher_onboarding_docs](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_007.md) | 2026-06-16 |
-| **TASK-008** | `MERGED` | [task/task_008_watcher_handoff_consumers](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_008.md) | 2026-06-16 |
-| **TASK-009** | `MERGED` | [task/task_009_editable_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_009.md) | 2026-06-16 |
-| **TASK-010** | `MERGED` | [task/task_010_launch_dashboard_directly](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_010.md) | 2026-06-16 |
-| **TASK-011** | `MERGED` | [task/task_011_default_agent_names](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_011.md) | 2026-06-16 |
-| **TASK-012** | `MERGED` | [task/task_012_subscription_usage_ui](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_012.md) | 2026-06-16 |
-| **TASK-013** | `MERGED` | [task/task_013_groupchat_planning_artifacts](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_013.md) | 2026-06-16 |
-| **TASK-015** | `MERGED` | [task/task_015_workflow_alive_note](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_015.md) | 2026-06-17 |
-| **TASK-016** | `MERGED` | [task/task_016_review_decision_final_mile](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_016.md) | 2026-06-17 |
-| **TASK-017** | `MERGED` | [task/task_017_groupchat_meeting_room_mode](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_017.md) | 2026-06-17 |
-| **TASK-018** | `MERGED` | [task/task_018_roster_avatar_picker](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_018.md) | 2026-06-17 |
-| **TASK-019** | `MERGED` | [task/task_019_team_rules_governance_updates](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_019.md) | 2026-06-17 |
-| **TASK-020** | `MERGED` | [task/task_020_roster_avatar_portrait_picker](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_020.md) | 2026-06-17 |
-| **TASK-021** | `UNDER_REVIEW` | [task/task_021_agent_cowork_local_package](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_021.md) | 2026-06-17 |
 
 
 ---

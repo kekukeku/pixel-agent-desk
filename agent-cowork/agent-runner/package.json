@@ -1,0 +1,13 @@
+{
+  "name": "agent-cowork-runner",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Automation runner tools for agent-cowork governance handoffs",
+  "scripts": {
+    "resolve-task": "node resolve-task.js",
+    "trigger-review": "node trigger-review.js",
+    "dispatch-grok-review": "node dispatch-grok-review.js",
+    "validate-review": "node validate-review.js",
+    "route-review": "node route-review-decision.js"
+  }
+}

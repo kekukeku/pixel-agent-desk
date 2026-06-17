@@ -1,0 +1,10 @@
+{
+  "name": "agent-cowork",
+  "version": "1.0.0",
+  "description": "Portable multi-agent governance workflow kit",
+  "main": "install-workflow.js",
+  "private": true,
+  "scripts": {
+    "verify": "bash verify-package.sh"
+  }
+}
