@@ -155,3 +155,13 @@ All notable changes to this project will be documented in this file.
 - Awaited avatar config fetching in async `initApp()` sequence to prevent initial rendering glitch.
 - Documented `localStorage` override key shape and usage under "Avatar Customization Override" section in `README.md`.
 
+## [2026-06-17] TASK-019: Add governance rules from TASK-015 through TASK-018 retrospectives
+
+- Updated `TEAM_RULES.md` to codify five key governance lessons from the TASK-015 through TASK-018 colleagueview batch:
+  - Added a rule for handling superseded or absorbed tasks.
+  - Specified UI-heavy task specification minimum requirements (affected visual surface, coordinates/constraints, state ownership, fallback names, persistence store, startup sequencing, live/replay isolation, responsive behavior, manual verification).
+  - Formalized the Grok Build review final-mile contract and post-merge reconciliation steps.
+  - Defined reviewer escalation guidelines outlining systemic risk factors that require a `REQUEST_CHANGES` decision.
+  - Established a colleagueview-to-rules loop for turning batch retrospectives into durable team rules.
+
+
