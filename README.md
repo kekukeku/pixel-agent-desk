@@ -78,6 +78,8 @@ You can run `watcher.py` (written in Python 3) to automatically monitor this rep
 1. **Visual status updates**: reports activity events to the Electron app to animate Codex, Antigravity, and Grok Build characters.
 2. **Execution handoff**: runs local trigger or routing commands when tasks change.
 
+Additionally, in active mode, the watcher automatically coordinates a **review-decision final-mile dispatch** after Grok Build publishes `REVIEWS/review_NNN.md`. For `APPROVE` or `REQUEST_CHANGES` decisions, the watcher invokes the configured `review_decision.command` (which defaults to opening an Antigravity follow-up session via `python3 scripts/trigger_antigravity.py --review-decision --task {task_num}`) once the review router writes `REVIEWS/handoff_payload_NNN.json`.
+
 ### Quick Start
 
 To setup and run the repository watcher on a clean checkout, follow these steps:
@@ -214,6 +216,10 @@ The watcher dispatches configured commands or webhooks asynchronously via backgr
     "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
     "webhook": null
   },
+  "review_decision": {
+    "command": "python3 scripts/trigger_antigravity.py --review-decision --task {task_num}",
+    "webhook": null
+  },
   "keep_alive_seconds": 60,
   "command_timeout_seconds": 600,
   "output_capture_bytes": 8192,
@@ -238,6 +244,8 @@ The watcher dispatches configured commands or webhooks asynchronously via backgr
 | `grok.webhook` | `""` | — | HTTP POST URL for Grok dispatch (used if command is empty) |
 | `planning.command` | `""` | — | Shell command for consultative planning handoffs; `{session_id}` and `{input_path}` are replaced at runtime |
 | `planning.webhook` | `""` | — | HTTP POST URL for consultative planning handoffs (used if command is empty) |
+| `review_decision.command` | `"python3 scripts/trigger_antigravity.py --review-decision --task {task_num}"` | — | Shell command for review-decision final-mile dispatches; `{task_num}` is replaced at runtime |
+| `review_decision.webhook` | `""` | — | HTTP POST URL for review-decision final-mile dispatches (used if command is empty) |
 | `keep_alive_seconds` | `60` | `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE` | Periodic `agent.idle` heartbeat interval |
 | `command_timeout_seconds` | `600` | `PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT` | Max seconds before a dispatched command is killed |
 | `output_capture_bytes` | `8192` | `PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES` | Max bytes captured from stdout/stderr per dispatch |

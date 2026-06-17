@@ -58,6 +58,10 @@ class WatcherState:
                 "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
                 "webhook": None
             },
+            "review_decision": {
+                "command": "python3 scripts/trigger_antigravity.py --review-decision --task {task_num}",
+                "webhook": None
+            },
             "keep_alive_seconds": DEFAULT_KEEP_ALIVE_SECONDS
         }
         if os.path.exists(config_path):
@@ -65,7 +69,7 @@ class WatcherState:
                 with open(config_path, "r", encoding="utf-8") as f:
                     user_config = json.load(f)
                     # Merge configurations
-                    for key in ["antigravity", "grok", "planning"]:
+                    for key in ["antigravity", "grok", "planning", "review_decision"]:
                         if key in user_config:
                             if user_config[key] is not None:
                                 defaults[key].update(user_config[key])
@@ -127,6 +131,14 @@ class WatcherState:
         env_plan_web = os.environ.get("PIXEL_AGENT_DESK_PLANNING_WEBHOOK")
         if env_plan_web:
             defaults["planning"]["webhook"] = env_plan_web
+
+        env_rev_dec_cmd = os.environ.get("PIXEL_AGENT_DESK_REVIEW_DECISION_COMMAND")
+        if env_rev_dec_cmd:
+            defaults["review_decision"]["command"] = env_rev_dec_cmd
+
+        env_rev_dec_web = os.environ.get("PIXEL_AGENT_DESK_REVIEW_DECISION_WEBHOOK")
+        if env_rev_dec_web:
+            defaults["review_decision"]["webhook"] = env_rev_dec_web
 
         env_keep_alive = os.environ.get("PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE")
         if env_keep_alive:
@@ -282,7 +294,7 @@ def _write_dispatch_result(project_root, result):
     except Exception as e:
         print(f"Warning: Could not write dispatch result to {path}: {e}", file=sys.stderr)
 
-def _run_command_worker(formatted_cmd, timeout, capture_bytes, project_root, result_template):
+def _run_command_worker(formatted_cmd, timeout, capture_bytes, project_root, result_template, state=None):
     """Background thread: run command, collect result, write dispatch_result file."""
     env = _build_node_env()
     result = dict(result_template)
@@ -320,6 +332,95 @@ def _run_command_worker(formatted_cmd, timeout, capture_bytes, project_root, res
         result["stdout_excerpt"] = ""
         result["stderr_excerpt"] = ""
         result["error"] = str(e)
+
+    # 2. If primary succeeded, check if final-mile command/webhook needs to be executed
+    if result["success"] and state and result_template.get("trigger") == "review_decision":
+        original_mode = getattr(state, "original_execution_mode", None)
+        if original_mode is None:
+            original_mode = state.config.get("execution_mode", "visual-only")
+        original_config = getattr(state, "original_config", None)
+        if original_config is None:
+            original_config = state.config
+        decision = result_template.get("state")
+        task_num = result_template.get("task_num")
+        
+        # Final-mile only opens for APPROVE or REQUEST_CHANGES
+        if decision in ["APPROVE", "REQUEST_CHANGES"] and original_mode == "active":
+            # We ONLY run final-mile if handoff_payload_NNN.json exists on disk
+            payload_path = os.path.join(project_root, "REVIEWS", f"handoff_payload_{task_num}.json")
+            if os.path.exists(payload_path):
+                review_dec_cfg = original_config.get("review_decision", {})
+                rev_cmd = review_dec_cfg.get("command")
+                rev_webhook = review_dec_cfg.get("webhook")
+                
+                if rev_cmd or rev_webhook:
+                    if rev_cmd:
+                        formatted_rev_cmd = _format_command_template(rev_cmd, {
+                            "task_num": task_num,
+                            "project_root": project_root
+                        })
+                        try:
+                            proc2 = subprocess.Popen(
+                                formatted_rev_cmd,
+                                shell=True,
+                                cwd=project_root,
+                                env=env,
+                                stdout=subprocess.PIPE,
+                                stderr=subprocess.PIPE
+                            )
+                            try:
+                                stdout_b2, stderr_b2 = proc2.communicate(timeout=timeout)
+                                returncode2 = proc2.returncode
+                            except subprocess.TimeoutExpired:
+                                proc2.kill()
+                                stdout_b2, stderr_b2 = proc2.communicate()
+                                returncode2 = -1
+                                timed_out = True
+                            
+                            success2 = (returncode2 == 0) and not timed_out
+                            result["success"] = success2
+                            result["returncode"] = returncode2
+                            result["timed_out"] = timed_out
+                            result["stdout_excerpt"] += f"\n--- Final-Mile Command stdout ---\n" + stdout_b2[:capture_bytes].decode("utf-8", errors="replace")
+                            result["stderr_excerpt"] += f"\n--- Final-Mile Command stderr ---\n" + stderr_b2[:capture_bytes].decode("utf-8", errors="replace")
+                            if not success2:
+                                result["error"] = "Final-mile command timed out" if timed_out else f"Final-mile command failed with exit code {returncode2}"
+                        except Exception as e:
+                            result["success"] = False
+                            result["returncode"] = -1
+                            result["timed_out"] = False
+                            result["error"] = f"Failed to run final-mile command: {e}"
+                    elif rev_webhook:
+                        payload_data = None
+                        try:
+                            with open(payload_path, "r", encoding="utf-8") as pf:
+                                payload_data = json.load(pf)
+                        except Exception:
+                            pass
+                        if not payload_data:
+                            payload_data = {
+                                "task_num": task_num,
+                                "project_root": project_root,
+                                "decision": decision,
+                                "timestamp": time.time()
+                            }
+                        
+                        try:
+                            data = json.dumps(payload_data).encode("utf-8")
+                            req = urllib.request.Request(
+                                rev_webhook, data=data, headers={"Content-Type": "application/json"}
+                            )
+                            with urllib.request.urlopen(req, timeout=30) as resp:
+                                body = resp.read(capture_bytes)
+                                result["success"] = True
+                                result["http_status"] = resp.status
+                                result["stdout_excerpt"] += f"\n--- Final-Mile Webhook response ---\n" + body.decode("utf-8", errors="replace")
+                                result["error"] = None
+                        except Exception as e:
+                            result["success"] = False
+                            result["http_status"] = getattr(e, "code", None)
+                            result["error"] = f"Final-mile webhook failed: {e}"
+
     result["finished_at"] = time.time()
     if not result["success"]:
         print(
@@ -479,7 +580,7 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
             formatted_cmd = _format_command_template(cmd, {"task_num": task_num})
         t = Thread(
             target=_run_command_worker,
-            args=(formatted_cmd, timeout, capture, state.project_root, result_template),
+            args=(formatted_cmd, timeout, capture, state.project_root, result_template, state),
             daemon=True
         )
         t.start()
@@ -1057,7 +1158,9 @@ def main():
                     router_state = type('_RS', (), {
                         'config': router_cfg_override,
                         'project_root': state.project_root,
-                        'dispatched_keys': state.dispatched_keys
+                        'dispatched_keys': state.dispatched_keys,
+                        'original_execution_mode': state.config.get("execution_mode"),
+                        'original_config': state.config
                     })()
                     dispatch_handoff(
                         router_state, "antigravity", task_num,

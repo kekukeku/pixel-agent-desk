@@ -572,4 +572,145 @@ describe('watcher.py --dispatch-test P0 integration', () => {
     const resultFile = path.join(tempDir, 'PLANNING', 'dispatch_result_093_planning.json');
     expect(fs.existsSync(resultFile)).toBe(true);
   });
+
+  test('review_decision trigger with REQUEST_CHANGES decision invokes final-mile command', () => {
+    cleanupTempRepo(tempDir);
+    tempDir = createTempRepo('pad watcher test ');
+
+    // Write handoff_payload_094.json file (since final-mile requires it to exist)
+    const payloadPath = path.join(tempDir, 'REVIEWS', 'handoff_payload_094.json');
+    fs.mkdirSync(path.dirname(payloadPath), { recursive: true });
+    fs.writeFileSync(payloadPath, JSON.stringify({
+      task_num: '094',
+      project_root: tempDir,
+      decision: 'REQUEST_CHANGES',
+      handoffTarget: 'antigravity',
+      reviewPath: 'REVIEWS/review_094.md',
+      summary: 'Some changes are needed.'
+    }));
+
+    const env = activeEnv({
+      PIXEL_AGENT_DESK_ANTIGRAVITY_COMMAND: 'echo primary_command_{task_num}',
+      PIXEL_AGENT_DESK_REVIEW_DECISION_COMMAND: 'echo final_mile_{task_num}',
+    });
+    const args = {
+      target: 'antigravity',
+      task_num: '094',
+      trigger: 'review_decision',
+      state: 'REQUEST_CHANGES',
+      payload: {
+        task_num: '094',
+        project_root: tempDir,
+        decision: 'REQUEST_CHANGES',
+        timestamp: 1234567890.0,
+      },
+      timeout_wait: 10,
+    };
+
+    const stdout = dispatchTest(tempDir, args, env);
+    const result = JSON.parse(stdout);
+    expect(result.success).toBe(true);
+
+    // Check dispatch_result contents to verify both primary and final-mile ran
+    const resultFile = path.join(tempDir, 'REVIEWS', 'dispatch_result_094_antigravity.json');
+    expect(fs.existsSync(resultFile)).toBe(true);
+    const resultJson = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+    expect(resultJson.success).toBe(true);
+    expect(resultJson.stdout_excerpt).toContain('primary_command_094');
+    expect(resultJson.stdout_excerpt).toContain('final_mile_094');
+  });
+
+  test('review_decision trigger with APPROVE decision invokes final-mile command', () => {
+    cleanupTempRepo(tempDir);
+    tempDir = createTempRepo('pad watcher test ');
+
+    // Write handoff_payload_094.json file
+    const payloadPath = path.join(tempDir, 'REVIEWS', 'handoff_payload_094.json');
+    fs.mkdirSync(path.dirname(payloadPath), { recursive: true });
+    fs.writeFileSync(payloadPath, JSON.stringify({
+      task_num: '094',
+      project_root: tempDir,
+      decision: 'APPROVE',
+      handoffTarget: 'antigravity',
+      reviewPath: 'REVIEWS/review_094.md',
+      summary: 'Task approved.'
+    }));
+
+    const env = activeEnv({
+      PIXEL_AGENT_DESK_ANTIGRAVITY_COMMAND: 'echo primary_command_{task_num}',
+      PIXEL_AGENT_DESK_REVIEW_DECISION_COMMAND: 'echo final_mile_{task_num}',
+    });
+    const args = {
+      target: 'antigravity',
+      task_num: '094',
+      trigger: 'review_decision',
+      state: 'APPROVE',
+      payload: {
+        task_num: '094',
+        project_root: tempDir,
+        decision: 'APPROVE',
+        timestamp: 1234567890.0,
+      },
+      timeout_wait: 10,
+    };
+
+    const stdout = dispatchTest(tempDir, args, env);
+    const result = JSON.parse(stdout);
+    expect(result.success).toBe(true);
+
+    // Check dispatch_result contents to verify both primary and final-mile ran
+    const resultFile = path.join(tempDir, 'REVIEWS', 'dispatch_result_094_antigravity.json');
+    expect(fs.existsSync(resultFile)).toBe(true);
+    const resultJson = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+    expect(resultJson.success).toBe(true);
+    expect(resultJson.stdout_excerpt).toContain('primary_command_094');
+    expect(resultJson.stdout_excerpt).toContain('final_mile_094');
+  });
+
+  test('review_decision trigger with REJECT decision does NOT invoke final-mile command', () => {
+    cleanupTempRepo(tempDir);
+    tempDir = createTempRepo('pad watcher test ');
+
+    // Write handoff_payload_094.json file
+    const payloadPath = path.join(tempDir, 'REVIEWS', 'handoff_payload_094.json');
+    fs.mkdirSync(path.dirname(payloadPath), { recursive: true });
+    fs.writeFileSync(payloadPath, JSON.stringify({
+      task_num: '094',
+      project_root: tempDir,
+      decision: 'REJECT',
+      handoffTarget: 'antigravity',
+      reviewPath: 'REVIEWS/review_094.md',
+      summary: 'Task rejected.'
+    }));
+
+    const env = activeEnv({
+      PIXEL_AGENT_DESK_ANTIGRAVITY_COMMAND: 'echo primary_command_{task_num}',
+      PIXEL_AGENT_DESK_REVIEW_DECISION_COMMAND: 'echo final_mile_{task_num}',
+    });
+    const args = {
+      target: 'antigravity',
+      task_num: '094',
+      trigger: 'review_decision',
+      state: 'REJECT',
+      payload: {
+        task_num: '094',
+        project_root: tempDir,
+        decision: 'REJECT',
+        timestamp: 1234567890.0,
+      },
+      timeout_wait: 10,
+    };
+
+    const stdout = dispatchTest(tempDir, args, env);
+    const result = JSON.parse(stdout);
+    expect(result.success).toBe(true);
+
+    // Check dispatch_result contents to verify only primary ran
+    const resultFile = path.join(tempDir, 'REVIEWS', 'dispatch_result_094_antigravity.json');
+    expect(fs.existsSync(resultFile)).toBe(true);
+    const resultJson = JSON.parse(fs.readFileSync(resultFile, 'utf8'));
+    expect(resultJson.success).toBe(true);
+    expect(resultJson.stdout_excerpt).toContain('primary_command_094');
+    expect(resultJson.stdout_excerpt).not.toContain('final_mile_094');
+  });
 });
