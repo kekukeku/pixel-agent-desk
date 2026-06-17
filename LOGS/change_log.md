@@ -164,4 +164,12 @@ All notable changes to this project will be documented in this file.
   - Defined reviewer escalation guidelines outlining systemic risk factors that require a `REQUEST_CHANGES` decision.
   - Established a colleagueview-to-rules loop for turning batch retrospectives into durable team rules.
 
+## [2026-06-17] TASK-020: Show front-facing avatar portraits in System Roster picker
+
+- Replaced full spritesheet `<img>` elements in System Roster cards and avatar picker options with cropped, scaled `background-image` divs showing character portraits.
+- Configured sprite portrait rendering math using the default front-facing `front_idle` frame at index `0` with properties `cols: 8`, `frameW: 48`, and `frameH: 64` from `sprite-frames.json`.
+- Implemented `spritePortraitStyle()` and `spritePortraitHtml()` reusable helpers in `public/dashboard.js` to avoid styling duplication.
+- Ensured container sizes remain fixed and stable when the picker dropdown is toggled.
+- Confirmed compatibility with `pixel-agent-desk.avatarOverrides.v1` local storage persistence.
+
 
