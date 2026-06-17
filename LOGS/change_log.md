@@ -144,3 +144,14 @@ All notable changes to this project will be documented in this file.
 - Hardened speech bubble rendering to wrap and truncate text content for better readability.
 - Updated `watcher.py` to broadcast structured `agent.working` events during DRAFT planning for all three core agents, and `agent.idle` events upon completion.
 - Added extensive frontend/server integration and unit tests passing cleanly.
+
+## [2026-06-17] TASK-018: Restore System Roster avatar appearance picker
+
+- Restored System Roster avatar selection by introducing a compact per-card dropdown grid menu and edit overlay in `public/dashboard.js`.
+- Sourced available avatar sprites from `public/shared/avatars.json` and rendered them with pixel-art styling.
+- Implemented immediate office canvas synchronization in `src/office/office-character.js` and `public/dashboard.js` by updating the active character's `skinIndex` and `avatarFile`.
+- Persisted user selections across reload sessions using namespaced `localStorage` key `pixel-agent-desk.avatarOverrides.v1`.
+- Added a "Reset to Default" button to clear overrides and fall back to deterministic default `avatarIndexFromId()` values.
+- Awaited avatar config fetching in async `initApp()` sequence to prevent initial rendering glitch.
+- Documented `localStorage` override key shape and usage under "Avatar Customization Override" section in `README.md`.
+
