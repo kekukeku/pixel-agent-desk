@@ -125,3 +125,12 @@ All notable changes to this project will be documented in this file.
 - Provided a health check verification endpoint (`http://127.0.0.1:47822/health`) and visual instructions in `README.md`.
 - Implemented shell-quoting (`shlex.quote()`) in `watcher.py` to prevent errors when planning-dispatch commands or repositories have paths containing spaces.
 - Added comprehensive integration tests in `__tests__/watcher.test.js` verifying path quoting on space-bearing prefixes.
+
+## [2026-06-17] TASK-016: Add review decision final-mile runner
+
+- Closed the review-decision automation loop by implementing final-mile coordination in `watcher.py` when in `active` mode.
+- Chained sequential final-mile dispatch inside `_run_command_worker` to execute the custom review-decision command or trigger a webhook once the review router payload `REVIEWS/handoff_payload_NNN.json` is generated.
+- Added a separate `review_decision` config section in watcher default settings, with environment variables overrides `PIXEL_AGENT_DESK_REVIEW_DECISION_COMMAND` and `PIXEL_AGENT_DESK_REVIEW_DECISION_WEBHOOK`.
+- Enhanced `scripts/trigger_antigravity.py` with a `--review-decision` mode that reads `handoff_payload_NNN.json` and builds decision-specific (e.g. `APPROVE` or `REQUEST_CHANGES`) prompts for Antigravity.
+- Documented final-mile dispatch, its configuration, and its environment overrides in `README.md`.
+- Added new integration tests in `__tests__/watcher.test.js` covering `review_decision` final-mile triggers for `APPROVE`, `REQUEST_CHANGES`, and `REJECT` decisions.
