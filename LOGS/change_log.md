@@ -117,3 +117,11 @@ All notable changes to this project will be documented in this file.
 - Documented GroupChat workflow and configurations in `README.md` and `TEAM_RULES.md` as the default DRAFT advisory mechanism.
 - Created dashboard-ready golden fixture at `PLANNING/fixtures/groupchat_001.json`.
 - Added unit and integration test suite `__tests__/groupchatPlanning.test.js` validating formatters, CLI arguments, and watcher dispatching.
+
+## [2026-06-17] TASK-015: Add README note for keeping npm run workflow alive
+
+- Added an explicit documentation callout in `README.md` explaining that `npm run workflow` is a long-running process that must remain active.
+- Documented key dependencies (both repository watcher and reviewer adapter server) required to keep the local automation loop functioning.
+- Provided a health check verification endpoint (`http://127.0.0.1:47822/health`) and visual instructions in `README.md`.
+- Implemented shell-quoting (`shlex.quote()`) in `watcher.py` to prevent errors when planning-dispatch commands or repositories have paths containing spaces.
+- Added comprehensive integration tests in `__tests__/watcher.test.js` verifying path quoting on space-bearing prefixes.
