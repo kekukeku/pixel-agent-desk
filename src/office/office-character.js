@@ -19,9 +19,26 @@ var officeCharacters = {
     // Map dashboard status to office state
     const officeState = this._mapStatus(agentData.status);
 
-    // Prefer server-assigned avatarIndex, fallback: hash calculation
-    const avatarIdx = (agentData.avatarIndex !== undefined && agentData.avatarIndex !== null)
-      ? agentData.avatarIndex : avatarIndexFromId(agentData.id);
+    // Prefer browser local storage override, then server-assigned avatarIndex, fallback: hash calculation
+    let avatarIdx;
+    if (typeof localStorage !== 'undefined') {
+      try {
+        const stored = localStorage.getItem('pixel-agent-desk.avatarOverrides.v1');
+        if (stored) {
+          const overrides = JSON.parse(stored);
+          if (overrides[agentData.id] !== undefined) {
+            avatarIdx = overrides[agentData.id];
+          }
+        }
+      } catch (e) {
+        console.error('[OfficeCharacter] Failed to load local avatar overrides:', e);
+      }
+    }
+    // ponytail: fallback to server-assigned or hash-based defaults if no override is set
+    if (avatarIdx === undefined) {
+      avatarIdx = (agentData.avatarIndex !== undefined && agentData.avatarIndex !== null)
+        ? agentData.avatarIndex : avatarIndexFromId(agentData.id);
+    }
     const avatarFile = AVATAR_FILES[avatarIdx] || AVATAR_FILES[0];
 
     const char = {

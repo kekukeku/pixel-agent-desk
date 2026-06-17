@@ -163,6 +163,48 @@ function renderAgentList() {
   for (const [id, ag] of state.agents) updateAgentUI(ag);
 }
 
+// ─── AVATAR OVERRIDES STORAGE ───
+function getLocalAvatarOverrides() {
+  try {
+    const stored = localStorage.getItem('pixel-agent-desk.avatarOverrides.v1');
+    return stored ? JSON.parse(stored) : {};
+  } catch (e) {
+    console.error('Failed to parse avatar overrides:', e);
+    return {};
+  }
+}
+
+function saveAvatarOverride(agentId, avatarIdx) {
+  try {
+    const overrides = getLocalAvatarOverrides();
+    overrides[agentId] = avatarIdx;
+    localStorage.setItem('pixel-agent-desk.avatarOverrides.v1', JSON.stringify(overrides));
+  } catch (e) {
+    console.error('Failed to save avatar override:', e);
+  }
+}
+
+function clearAvatarOverride(agentId) {
+  try {
+    const overrides = getLocalAvatarOverrides();
+    delete overrides[agentId];
+    localStorage.setItem('pixel-agent-desk.avatarOverrides.v1', JSON.stringify(overrides));
+  } catch (e) {
+    console.error('Failed to clear avatar override:', e);
+  }
+}
+
+function updateOfficeCharacterAvatar(agentId, avatarIdx) {
+  if (typeof officeCharacters !== 'undefined') {
+    const char = officeCharacters.characters.get(agentId);
+    if (char) {
+      char.skinIndex = avatarIdx;
+      // ponytail: update both skinIndex and avatarFile to sync canvas character immediately
+      char.avatarFile = AVATAR_FILES[avatarIdx] || AVATAR_FILES[0];
+    }
+  }
+}
+
 function updateAgentUI(ag) {
   DOM.standbyMessage.style.display = 'none';
   const existing = DOM.agentPanel.querySelector(`[data-id="${ag.id}"]`);
@@ -215,12 +257,57 @@ function updateAgentUI(ag) {
     : `<span>Usage unavailable</span>
        <span>Cost: <span class="mc-metric-val">N/A</span></span>`;
 
-  const html = `
-    <div class="mc-agent-header">
-      <div class="mc-agent-name">${nameContent} ${typeHtml}</div>
-      <div class="mc-agent-status ${stClass}">${stText}</div>
+  // Resolve current avatar from localStorage override or default assignments
+  const overrides = getLocalAvatarOverrides();
+  const hasOverride = overrides[ag.id] !== undefined;
+  const currentAvatarIdx = hasOverride ? overrides[ag.id] : (ag.avatarIndex !== undefined && ag.avatarIndex !== null ? ag.avatarIndex : avatarIndexFromId(ag.id));
+  const currentAvatarFile = (typeof AVATAR_FILES !== 'undefined' && AVATAR_FILES[currentAvatarIdx]) ? AVATAR_FILES[currentAvatarIdx] : 'avatar_0.webp';
+
+  // Build grid options HTML
+  const optionsHtml = (typeof AVATAR_FILES !== 'undefined' ? AVATAR_FILES : []).map((file, idx) => {
+    const isSel = idx === currentAvatarIdx;
+    return `
+      <button class="mc-avatar-option ${isSel ? 'selected' : ''}" data-idx="${idx}" title="Avatar ${idx}">
+        <img src="/public/characters/${file}" alt="Option ${idx}" class="mc-avatar-option-img" />
+      </button>
+    `;
+  }).join('');
+
+  // Preserve picker open status across rendering ticks
+  let isDropdownActive = false;
+  if (existing) {
+    const dropdown = existing.querySelector('.mc-avatar-picker-dropdown');
+    if (dropdown && dropdown.classList.contains('active')) {
+      isDropdownActive = true;
+    }
+  }
+
+  const dropdownHtml = `
+    <div class="mc-avatar-picker-dropdown ${isDropdownActive ? 'active' : ''}">
+      <div class="mc-avatar-grid">
+        ${optionsHtml}
+      </div>
+      ${hasOverride ? `<button class="mc-avatar-reset-btn">Reset to Default</button>` : ''}
     </div>
-    <div class="mc-agent-activity">CMD> ${actText}</div>
+  `;
+
+  const html = `
+    <div class="mc-agent-card-body">
+      <div class="mc-avatar-container" data-id="${ag.id}">
+        <button class="mc-avatar-btn" title="Change Avatar">
+          <img src="/public/characters/${currentAvatarFile}" alt="Agent avatar" class="mc-avatar-img" />
+          <div class="mc-avatar-edit-overlay">✎</div>
+        </button>
+        ${dropdownHtml}
+      </div>
+      <div class="mc-agent-details">
+        <div class="mc-agent-header">
+          <div class="mc-agent-name">${nameContent} ${typeHtml}</div>
+          <div class="mc-agent-status ${stClass}">${stText}</div>
+        </div>
+        <div class="mc-agent-activity">CMD> ${actText}</div>
+      </div>
+    </div>
     ${timelineHtml}
     <div class="mc-agent-metrics">
       ${metricsHtml}
@@ -786,7 +873,68 @@ function setupNameEditHandlers() {
       if (ag) {
         updateAgentUI(ag);
       }
+      return;
     }
+
+    // Avatar button clicked -> toggle picker dropdown
+    const avatarBtn = e.target.closest('.mc-avatar-btn');
+    if (avatarBtn) {
+      e.stopPropagation();
+      const container = avatarBtn.closest('.mc-avatar-container');
+      const dropdown = container.querySelector('.mc-avatar-picker-dropdown');
+      
+      // Close other dropdowns
+      document.querySelectorAll('.mc-avatar-picker-dropdown').forEach(d => {
+        if (d !== dropdown) d.classList.remove('active');
+      });
+      
+      dropdown.classList.toggle('active');
+      return;
+    }
+
+    // Avatar option selected
+    const optionBtn = e.target.closest('.mc-avatar-option');
+    if (optionBtn) {
+      e.stopPropagation();
+      const card = optionBtn.closest('.mc-agent-card');
+      const agentId = card.dataset.id;
+      const avatarIdx = parseInt(optionBtn.dataset.idx);
+      
+      saveAvatarOverride(agentId, avatarIdx);
+      
+      const ag = state.agents.get(agentId);
+      if (ag) {
+        updateAgentUI(ag);
+      }
+      updateOfficeCharacterAvatar(agentId, avatarIdx);
+      return;
+    }
+
+    // Reset button clicked
+    const resetBtn = e.target.closest('.mc-avatar-reset-btn');
+    if (resetBtn) {
+      e.stopPropagation();
+      const card = resetBtn.closest('.mc-agent-card');
+      const agentId = card.dataset.id;
+      
+      clearAvatarOverride(agentId);
+      
+      const ag = state.agents.get(agentId);
+      if (ag) {
+        updateAgentUI(ag);
+      }
+      const defaultIdx = (ag.avatarIndex !== undefined && ag.avatarIndex !== null)
+        ? ag.avatarIndex : avatarIndexFromId(agentId);
+      updateOfficeCharacterAvatar(agentId, defaultIdx);
+      return;
+    }
+  });
+
+  // Close open dropdowns on outside click
+  document.addEventListener('click', () => {
+    document.querySelectorAll('.mc-avatar-picker-dropdown').forEach(d => {
+      d.classList.remove('active');
+    });
   });
 
   DOM.agentPanel.addEventListener('input', (e) => {
@@ -1305,7 +1453,12 @@ async function loadUsername() {
 }
 
 // ─── BOOT ───
-function initApp() {
+async function initApp() {
+  // Wait for avatar files config first to avoid empty avatar list in initial rendering
+  if (typeof loadAvatarFiles === 'function') {
+    await loadAvatarFiles();
+  }
+
   // Sync startup view
   document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
   let btn = document.querySelector(`[data-view="${state.currentView}"]`);

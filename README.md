@@ -375,6 +375,19 @@ Persisted sessions are automatically recovered on application restart based on t
   }
   ```
 
+### Avatar Customization Override
+
+Roster agents (e.g. Codex, Antigravity, Grok Build) can be customized with local avatar overrides that persist across dashboard reloads:
+- **`localStorage` Key:** `pixel-agent-desk.avatarOverrides.v1`
+- **Data Shape:** A JSON object mapping stable agent `id` to the selected avatar index in the avatar file array.
+  ```json
+  {
+    "codex": 2,
+    "antigravity": 5
+  }
+  ```
+- **Reset Option:** Selecting the "Reset to Default" option removes the agent's entry from the override object, reverting their appearance to the default deterministic assignment (`avatarIndexFromId()`).
+
 ---
 
 ## Model Pricing Registry
