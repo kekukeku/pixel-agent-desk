@@ -180,4 +180,12 @@ All notable changes to this project will be documented in this file.
 - Provided templates for governance files (`TEAM_RULES.md`, `AGENT_STATE.md`, `TASKS/`, `REVIEWS/`, `PLANNING/`, `LOGS/`, `colleagueview/`).
 - Implemented `verify-package.sh` to automatically verify that the extracted package is completely free of visual/app assets or Electron shell code.
 
+## [2026-06-17] TASK-022: Harden review audit rules and colleagueview tone
 
+- Hardened review audit and process rules by introducing six normative guidelines to `TEAM_RULES.md` and `agent-cowork/templates/TEAM_RULES.md`.
+- Codified **Commit Before Review Gate** to enforce remote branch existence and substantive diff verification prior to moving tasks to review.
+- Established **Self-Check Evidence** standards requiring verification summaries, branch name, commit SHA, and test results in review requests.
+- Mandated **Review History Preservation** in validation master reports to log every review iteration chronologically.
+- Defined **Portable / Extraction Task Minimums** for reusable packages and libraries.
+- Added **Orphan / Superseded Task Check** in post-merge reconciliation to clean up outdated tasks.
+- Introduced **Colleagueview Tone** standards requiring warm, candid, lively, and evidence-grounded colleague feedback while avoiding generic empty praise, sarcasm, or pure vibes.
