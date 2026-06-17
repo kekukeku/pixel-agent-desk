@@ -10,8 +10,8 @@ const path = require('path');
 // Prevent global ~/.pixel-agent-desk/watcher.json from polluting tests
 process.env.PIXEL_AGENT_DESK_WATCHER_CONFIG_PATH = path.join(os.tmpdir(), 'non_existent_watcher_config.json');
 
-function createTempRepo() {
-  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-watcher-test-'));
+function createTempRepo(prefix = 'pad-watcher-test-') {
+  const rootDir = fs.mkdtempSync(path.join(os.tmpdir(), prefix));
   fs.mkdirSync(path.join(rootDir, 'TASKS'));
   fs.mkdirSync(path.join(rootDir, 'REVIEWS'));
   fs.mkdirSync(path.join(rootDir, 'PLANNING'));
@@ -541,8 +541,10 @@ describe('watcher.py --dispatch-test P0 integration', () => {
 
   // P0-7: planning dispatch → success result, planning path, groupchat_request written
   test('active mode + planning echo command → success result and files in PLANNING directory', () => {
+    cleanupTempRepo(tempDir);
+    tempDir = createTempRepo('pad watcher test ');
     const env = activeEnv({
-      PIXEL_AGENT_DESK_PLANNING_COMMAND: 'echo session={session_id} input={input_path}',
+      PIXEL_AGENT_DESK_PLANNING_COMMAND: 'node -e "console.log(process.argv[1])" {input_path}',
     });
     const args = {
       target: 'planning',
@@ -561,7 +563,7 @@ describe('watcher.py --dispatch-test P0 integration', () => {
     expect(result.dispatch_key).toBe('093:planning:task_status:DRAFT');
     expect(result.transport).toBe('command');
     expect(result.success).toBe(true);
-    expect(result.stdout_excerpt).toMatch(/session=093 input=/);
+    expect(result.stdout_excerpt).toContain(path.join(tempDir, 'TASKS', 'task_093.md'));
 
     // PLANNING directory files should exist
     const requestFile = path.join(tempDir, 'PLANNING', 'groupchat_request_093.json');

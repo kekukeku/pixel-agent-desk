@@ -6,6 +6,7 @@ import time
 import json
 import urllib.request
 import subprocess
+import shlex
 from threading import Thread
 
 # Watchdog imports
@@ -358,6 +359,13 @@ def _run_webhook_worker(url, payload, capture_bytes, project_root, result_templa
     result["finished_at"] = time.time()
     _write_dispatch_result(project_root, result)
 
+def _format_command_template(cmd, replacements):
+    """Replace command placeholders with shell-quoted values."""
+    formatted = cmd
+    for key, value in replacements.items():
+        formatted = formatted.replace("{" + key + "}", shlex.quote(str(value)))
+    return formatted
+
 def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payload):
     """
     Central dispatcher. Writes fallback payload, enforces idempotency,
@@ -463,9 +471,12 @@ def dispatch_handoff(state, target, task_num, trigger, state_or_decision, payloa
     if cmd:
         if target == "planning":
             input_path = os.path.join(state.project_root, "TASKS", f"task_{task_num}.md")
-            formatted_cmd = cmd.replace("{session_id}", task_num).replace("{input_path}", input_path)
+            formatted_cmd = _format_command_template(cmd, {
+                "session_id": task_num,
+                "input_path": input_path,
+            })
         else:
-            formatted_cmd = cmd.replace("{task_num}", task_num)
+            formatted_cmd = _format_command_template(cmd, {"task_num": task_num})
         t = Thread(
             target=_run_command_worker,
             args=(formatted_cmd, timeout, capture, state.project_root, result_template),

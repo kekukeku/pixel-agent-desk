@@ -114,6 +114,19 @@ To setup and run the repository watcher on a clean checkout, follow these steps:
   PIXEL_AGENT_DESK_PROJECT_ROOT="/path/to/another/repo" python3 watcher.py
   ```
 
+  *Alternatively, to run the full local automation loop (which automatically launches the watcher and the reviewer adapter together), run:*
+  ```bash
+  npm run workflow
+  ```
+
+> [!IMPORTANT]
+> **Keeping the Local Automation Loop Alive**
+> - **Long-Running Process**: `npm run workflow` is a long-running process that must remain active and keep occupying the terminal window for the local automation loop to function. It is **not** a one-shot setup command.
+> - **Local Loop Dependency**: The automation loop depends on **both** the repository watcher and the reviewer adapter server running simultaneously. If the shell prompt returns or the process exits, automatic handoffs and reviews will stop.
+> - **Reviewer Adapter Health Check**: You can verify that the reviewer adapter is active by visiting its health check endpoint at `http://127.0.0.1:47822/health` while the workflow is running.
+> - **Using the Terminal**: If you need to execute other commands while the workflow is running, do not terminate the process or reuse that terminal. Instead, open a new terminal window or tab.
+
+
 ### Operating Modes
 
 The watcher supports two execution modes, controlled by the `execution_mode` config key (or env var override). **The default is `visual-only`** — no commands or webhooks are executed until you explicitly opt in to `active`.
@@ -407,7 +420,6 @@ Every planning session outputs three files inside the `PLANNING/` directory:
 - `PLANNING/groupchat_<sessionId>.json`: Structured v1 timeline data for dashboard integration.
 - `PLANNING/groupchat_<sessionId>.md`: A human-readable full conversation transcript showing the sequence of proposals and advice.
 - `PLANNING/draft_<sessionId>.md`: A clean proposal markdown containing the finalized task specification drafted by Codex.
-
 ---
 
 ## Troubleshooting
