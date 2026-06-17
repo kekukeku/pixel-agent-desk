@@ -205,6 +205,27 @@ function updateOfficeCharacterAvatar(agentId, avatarIdx) {
   }
 }
 
+// ponytail: sprite sheet metadata — keep in sync with public/shared/sprite-frames.json
+const SPRITE_SHEET = { cols: 8, rows: 9, frameW: 48, frameH: 64, previewFrame: 0 };
+
+function spritePortraitStyle(sheetFile, displayW) {
+  const scale = displayW / SPRITE_SHEET.frameW;
+  const displayH = Math.round(SPRITE_SHEET.frameH * scale);
+  const sheetW = SPRITE_SHEET.cols * SPRITE_SHEET.frameW * scale;
+  const sheetH = SPRITE_SHEET.rows * SPRITE_SHEET.frameH * scale;
+  const col = SPRITE_SHEET.previewFrame % SPRITE_SHEET.cols;
+  const row = Math.floor(SPRITE_SHEET.previewFrame / SPRITE_SHEET.cols);
+  const posX = -col * SPRITE_SHEET.frameW * scale;
+  const posY = -row * SPRITE_SHEET.frameH * scale;
+  return `width:${displayW}px;height:${displayH}px;background-image:url('/public/characters/${sheetFile}');background-size:${sheetW}px ${sheetH}px;background-position:${posX}px ${posY}px;`;
+}
+
+function spritePortraitHtml(sheetFile, className, displayW, label) {
+  const style = spritePortraitStyle(sheetFile, displayW);
+  const safeLabel = escapeHtml(label);
+  return `<div class="${className}" style="${style}" role="img" aria-label="${safeLabel}" title="${safeLabel}"></div>`;
+}
+
 function updateAgentUI(ag) {
   DOM.standbyMessage.style.display = 'none';
   const existing = DOM.agentPanel.querySelector(`[data-id="${ag.id}"]`);
@@ -268,7 +289,7 @@ function updateAgentUI(ag) {
     const isSel = idx === currentAvatarIdx;
     return `
       <button class="mc-avatar-option ${isSel ? 'selected' : ''}" data-idx="${idx}" title="Avatar ${idx}">
-        <img src="/public/characters/${file}" alt="Option ${idx}" class="mc-avatar-option-img" />
+        ${spritePortraitHtml(file, 'mc-avatar-portrait mc-avatar-portrait-option', 28, `Avatar option ${idx}`)}
       </button>
     `;
   }).join('');
@@ -295,7 +316,7 @@ function updateAgentUI(ag) {
     <div class="mc-agent-card-body">
       <div class="mc-avatar-container" data-id="${ag.id}">
         <button class="mc-avatar-btn" title="Change Avatar">
-          <img src="/public/characters/${currentAvatarFile}" alt="Agent avatar" class="mc-avatar-img" />
+          ${spritePortraitHtml(currentAvatarFile, 'mc-avatar-portrait mc-avatar-portrait-card', 32, 'Agent avatar')}
           <div class="mc-avatar-edit-overlay">✎</div>
         </button>
         ${dropdownHtml}

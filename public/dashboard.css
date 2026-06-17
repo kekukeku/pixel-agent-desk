@@ -1371,12 +1371,13 @@ body {
   box-shadow: 0 0 6px var(--color-primary-dim);
 }
 
-.mc-avatar-img {
-  width: 32px;
-  height: 32px;
+.mc-avatar-portrait {
+  display: block;
+  flex-shrink: 0;
+  background-repeat: no-repeat;
   image-rendering: pixelated;
   image-rendering: crisp-edges;
-  object-fit: contain;
+  pointer-events: none;
 }
 
 .mc-avatar-edit-overlay {
@@ -1434,6 +1435,7 @@ body {
   display: flex;
   align-items: center;
   justify-content: center;
+  overflow: hidden;
   transition: border-color 0.2s, background-color 0.2s;
 }
 
@@ -1447,12 +1449,8 @@ body {
   background: var(--color-primary-dim);
 }
 
-.mc-avatar-option-img {
-  width: 28px;
-  height: 28px;
-  image-rendering: pixelated;
-  image-rendering: crisp-edges;
-  object-fit: contain;
+.mc-avatar-portrait-option {
+  margin: 0 auto;
 }
 
 .mc-avatar-reset-btn {
