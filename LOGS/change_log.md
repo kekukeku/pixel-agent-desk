@@ -172,4 +172,12 @@ All notable changes to this project will be documented in this file.
 - Ensured container sizes remain fixed and stable when the picker dropdown is toggled.
 - Confirmed compatibility with `pixel-agent-desk.avatarOverrides.v1` local storage persistence.
 
+## [2026-06-17] TASK-021: Package portable agent-cowork workflow kit locally
+
+- Created a portable local workflow package named `agent-cowork/` that extracts the multi-agent governance automation loop.
+- Designed `install-workflow.js` to support greenfield and brownfield target installation with options for `--target`, `--dry-run`, and `--force`, implementing conservative file copy semantics.
+- Bundled portable versions of the repository watcher (`watcher.py`), reviewer adapter, review engine, GroupChat planning runner, and startup scripts.
+- Provided templates for governance files (`TEAM_RULES.md`, `AGENT_STATE.md`, `TASKS/`, `REVIEWS/`, `PLANNING/`, `LOGS/`, `colleagueview/`).
+- Implemented `verify-package.sh` to automatically verify that the extracted package is completely free of visual/app assets or Electron shell code.
+
 

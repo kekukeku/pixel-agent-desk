@@ -1,15 +1,15 @@
 # TASK-021: Package portable agent-cowork workflow kit locally
 
-- **Status**: `UNDER_REVIEW`
+- **Status**: `MERGED`
 - **Created**: 2026-06-17
 - **Created By**: Codex (Layer 1)
 - **Assigned To**: Antigravity (Layer 3)
 - **Reviewer**: Grok Build (Layer 2)
 - **Priority**: `HIGH`
 - **Branch**: `task/task_021_agent_cowork_local_package`
-- **PR URL**: `N/A`
+- **PR URL**: `N/A (local merge @ d7f95c387106f189b621188c4a18dc2152c4d314)`
 - **Linked Advice**: [groupchat_021.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/PLANNING/groupchat_021.md)
-- **Linked Review**: `TBD`
+- **Linked Review**: [review_021.md](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/REVIEWS/review_021.md)
 - **Dependencies**: [TASK-013](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_013.md), [TASK-016](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_016.md), [TASK-019](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_019.md)
 
 ---
