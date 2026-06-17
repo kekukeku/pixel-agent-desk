@@ -35,7 +35,7 @@ To prevent state drift between different folders and GitHub PR statuses, this re
 | **TASK-013** | `MERGED` | [task/task_013_groupchat_planning_artifacts](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_013.md) | 2026-06-16 |
 | **TASK-015** | `MERGED` | [task/task_015_workflow_alive_note](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_015.md) | 2026-06-17 |
 | **TASK-016** | `MERGED` | [task/task_016_review_decision_final_mile](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_016.md) | 2026-06-17 |
-| **TASK-017** | `DRAFT` | [task/task_017_groupchat_meeting_room_mode](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_017.md) | 2026-06-17 |
+| **TASK-017** | `MERGED` | [task/task_017_groupchat_meeting_room_mode](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_017.md) | 2026-06-17 |
 | **TASK-018** | `DRAFT` | [task/task_018_roster_avatar_picker](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_018.md) | 2026-06-17 |
 
 

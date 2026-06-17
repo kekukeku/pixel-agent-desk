@@ -134,3 +134,13 @@ All notable changes to this project will be documented in this file.
 - Enhanced `scripts/trigger_antigravity.py` with a `--review-decision` mode that reads `handoff_payload_NNN.json` and builds decision-specific (e.g. `APPROVE` or `REQUEST_CHANGES`) prompts for Antigravity.
 - Documented final-mile dispatch, its configuration, and its environment overrides in `README.md`.
 - Added new integration tests in `__tests__/watcher.test.js` covering `review_decision` final-mile triggers for `APPROVE`, `REQUEST_CHANGES`, and `REJECT` decisions.
+
+## [2026-06-17] TASK-017: Add GroupChat meeting-room live mode and replay seating
+
+- Defined a single meeting-room seat map for core agents (`codex`, `antigravity`, `grok-build`) in `office-config.js` positioned in the right-middle meeting room.
+- Implemented live GroupChat planning meeting-room overrides in `src/office/office-character.js` and `src/office/office-ui.js` that place all three core roles in the meeting room during live planning and bypass standard pathfinding.
+- Integrated GroupChat replay mode seating via isolated characters (`window.__groupchatReplayCharacters`) and rendering flags (`window.__groupchatReplayActive`) without mutating live office positions.
+- Restored prior transient states (positions, paths, and bubbles) and removed temporary characters upon exit.
+- Hardened speech bubble rendering to wrap and truncate text content for better readability.
+- Updated `watcher.py` to broadcast structured `agent.working` events during DRAFT planning for all three core agents, and `agent.idle` events upon completion.
+- Added extensive frontend/server integration and unit tests passing cleanly.
