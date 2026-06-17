@@ -760,7 +760,7 @@ class RepoEventHandler(FileSystemEventHandler):
         is_relevant = (
             rel_path.startswith("TASKS/") and rel_path.endswith(".md") or
             rel_path.startswith("REVIEWS/") and rel_path.endswith(".md") or
-            (rel_path.startswith("PLANNING/") and os.path.basename(rel_path).startswith("groupchat_request_") and rel_path.endswith(".json")) or
+            (rel_path.startswith("PLANNING/") and (os.path.basename(rel_path).startswith("groupchat_request_") or os.path.basename(rel_path).startswith("groupchat_")) and rel_path.endswith(".json")) or
             rel_path == "AGENT_STATE.md"
         )
         if not is_relevant:
@@ -946,7 +946,7 @@ def main():
     planning_dir = os.path.join(project_root, "PLANNING")
     if os.path.exists(planning_dir):
         for fname in os.listdir(planning_dir):
-            if fname.startswith("groupchat_request_") and fname.endswith(".json"):
+            if (fname.startswith("groupchat_request_") or fname.startswith("groupchat_")) and fname.endswith(".json"):
                 p = os.path.join(planning_dir, fname)
                 if os.path.isfile(p):
                     state.mtimes[os.path.abspath(p)] = os.path.getmtime(p)
@@ -983,6 +983,15 @@ def main():
             antigravity_info = state.agents["antigravity"]
 
             if status == "IN_PROGRESS":
+                for role in ["codex", "grok-build"]:
+                    info = state.agents[role]
+                    post_agent_event(
+                        "agent.idle",
+                        info["id"],
+                        info["name"],
+                        info["type"],
+                        project_root=state.project_root
+                    )
                 post_agent_event(
                     "agent.working",
                     antigravity_info["id"],
@@ -1006,15 +1015,17 @@ def main():
                 request_file = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{task_num}.json")
                 output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{task_num}.json")
                 if not os.path.exists(request_file) and not os.path.exists(output_file):
-                    codex_info = state.agents["codex"]
-                    post_agent_event(
-                        "agent.working",
-                        codex_info["id"],
-                        codex_info["name"],
-                        codex_info["type"],
-                        tool=f"Planning session {task_num}",
-                        project_root=state.project_root
-                    )
+                    tool_desc = f"Planning session {task_num}"
+                    for role in ["codex", "antigravity", "grok-build"]:
+                        info = state.agents[role]
+                        post_agent_event(
+                            "agent.working",
+                            info["id"],
+                            info["name"],
+                            info["type"],
+                            tool=tool_desc,
+                            project_root=state.project_root
+                        )
                     handoff_data = {
                         "session_id": task_num,
                         "task_num": task_num,
@@ -1067,15 +1078,17 @@ def main():
                         request_file = os.path.join(state.project_root, "PLANNING", f"groupchat_request_{tnum}.json")
                         output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{tnum}.json")
                         if not os.path.exists(request_file) and not os.path.exists(output_file):
-                            codex_info = state.agents["codex"]
-                            post_agent_event(
-                                "agent.working",
-                                codex_info["id"],
-                                codex_info["name"],
-                                codex_info["type"],
-                                tool=f"Planning session {tnum}",
-                                project_root=state.project_root
-                            )
+                            tool_desc = f"Planning session {tnum}"
+                            for role in ["codex", "antigravity", "grok-build"]:
+                                info = state.agents[role]
+                                post_agent_event(
+                                    "agent.working",
+                                    info["id"],
+                                    info["name"],
+                                    info["type"],
+                                    tool=tool_desc,
+                                    project_root=state.project_root
+                                )
                             handoff_data = {
                                 "session_id": tnum,
                                 "task_num": tnum,
@@ -1089,40 +1102,56 @@ def main():
                             )
 
         elif rel_path.startswith("PLANNING/"):
-            session_id = extract_session_id_from_request(path)
-            if session_id:
-                output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{session_id}.json")
-                if not os.path.exists(output_file):
-                    task_num = session_id
-                    try:
-                        with open(path, "r", encoding="utf-8") as f:
-                            data = json.load(f)
-                            task_num = data.get("task_num", session_id)
-                    except Exception:
-                        pass
-                    
-                    key = make_dispatch_key(session_id, "planning", "request_file", "DRAFT")
-                    if key not in state.dispatched_keys:
-                        codex_info = state.agents["codex"]
+            fname = os.path.basename(path)
+            if fname.startswith("groupchat_") and not fname.startswith("groupchat_request_") and fname.endswith(".json"):
+                session_id = fname[len("groupchat_"):-len(".json")]
+                if session_id:
+                    for role in ["codex", "antigravity", "grok-build"]:
+                        info = state.agents[role]
                         post_agent_event(
-                            "agent.working",
-                            codex_info["id"],
-                            codex_info["name"],
-                            codex_info["type"],
-                            tool=f"Planning session {session_id}",
+                            "agent.idle",
+                            info["id"],
+                            info["name"],
+                            info["type"],
                             project_root=state.project_root
                         )
-                        handoff_data = {
-                            "session_id": session_id,
-                            "task_num": task_num,
-                            "project_root": state.project_root,
-                            "status": "DRAFT",
-                            "timestamp": time.time()
-                        }
-                        dispatch_handoff(
-                            state, "planning", session_id,
-                            "request_file", "DRAFT", handoff_data
-                        )
+            else:
+                session_id = extract_session_id_from_request(path)
+                if session_id:
+                    output_file = os.path.join(state.project_root, "PLANNING", f"groupchat_{session_id}.json")
+                    if not os.path.exists(output_file):
+                        task_num = session_id
+                        try:
+                            with open(path, "r", encoding="utf-8") as f:
+                                data = json.load(f)
+                                task_num = data.get("task_num", session_id)
+                        except Exception:
+                            pass
+                        
+                        key = make_dispatch_key(session_id, "planning", "request_file", "DRAFT")
+                        if key not in state.dispatched_keys:
+                            tool_desc = f"Planning session {session_id}"
+                            for role in ["codex", "antigravity", "grok-build"]:
+                                info = state.agents[role]
+                                post_agent_event(
+                                    "agent.working",
+                                    info["id"],
+                                    info["name"],
+                                    info["type"],
+                                    tool=tool_desc,
+                                    project_root=state.project_root
+                                )
+                            handoff_data = {
+                                "session_id": session_id,
+                                "task_num": task_num,
+                                "project_root": state.project_root,
+                                "status": "DRAFT",
+                                "timestamp": time.time()
+                            }
+                            dispatch_handoff(
+                                state, "planning", session_id,
+                                "request_file", "DRAFT", handoff_data
+                            )
 
         elif rel_path.startswith("REVIEWS/"):
             if not task_num:

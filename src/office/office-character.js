@@ -64,6 +64,30 @@ var officeCharacters = {
   },
 
   updateCharacter: function (agentData) {
+    const isPlanning = agentData.status === 'working' && agentData.currentTool && agentData.currentTool.startsWith('Planning session ');
+    if (isPlanning) {
+      const sessionId = agentData.currentTool.substring('Planning session '.length).trim();
+      this.startGroupChatMeeting(sessionId);
+    }
+
+    if (this._meetingActive && this._meetingParticipants && this._meetingParticipants.includes(agentData.id)) {
+      let someonePlanning = false;
+      const self = this;
+      this._meetingParticipants.forEach(function (pid) {
+        const charObj = self.characters.get(pid);
+        if (charObj) {
+          const statusVal = (pid === agentData.id) ? agentData.status : charObj.metadata.status;
+          const toolVal = (pid === agentData.id) ? agentData.currentTool : charObj.metadata.tool;
+          if (statusVal === 'working' && toolVal && toolVal.startsWith('Planning session ') && !charObj._isTemporary) {
+            someonePlanning = true;
+          }
+        }
+      });
+      if (!someonePlanning) {
+        this.endGroupChatMeeting(this._meetingSessionId);
+      }
+    }
+
     const char = this.characters.get(agentData.id);
     if (!char) {
       this.addCharacter(agentData);
@@ -149,9 +173,33 @@ var officeCharacters = {
 
   updateAll: function (deltaSec, deltaMs) {
     const self = this;
+    if (typeof window !== 'undefined' && window.__groupchatReplayActive) {
+      const chars = this.getCharacterArray();
+      chars.forEach(function (char) {
+        tickOfficeAnimation(char, deltaMs);
+      });
+      return;
+    }
     this.characters.forEach(function (char) {
-      self._updateTarget(char);
-      self._updateMovement(char, deltaSec);
+      const isParticipant = self._meetingActive && self._meetingParticipants && self._meetingParticipants.includes(char.id);
+      if (!isParticipant) {
+        self._updateTarget(char);
+        self._updateMovement(char, deltaSec);
+      } else {
+        char.path = [];
+        char.pathIndex = 0;
+        // Keep facing dir and idle anim during meeting
+        if (char.id === 'codex') {
+          char.facingDir = 'right';
+          char.currentAnim = 'right_idle';
+        } else if (char.id === 'grok-build') {
+          char.facingDir = 'down';
+          char.currentAnim = 'down_idle';
+        } else if (char.id === 'antigravity') {
+          char.facingDir = 'left';
+          char.currentAnim = 'left_idle';
+        }
+      }
       tickOfficeAnimation(char, deltaMs);
 
       // Working sparkles
@@ -383,7 +431,126 @@ var officeCharacters = {
     return candidates[idHash % Math.min(candidates.length, 5)];
   },
 
+  _meetingActive: false,
+  _meetingSessionId: null,
+  _meetingParticipants: null,
+  _priorStates: null,
+
+  startGroupChatMeeting: function (sessionId, participants) {
+    if (this._meetingActive && this._meetingSessionId === sessionId) return;
+
+    this._meetingActive = true;
+    this._meetingSessionId = sessionId;
+    this._meetingParticipants = participants || ['codex', 'antigravity', 'grok-build'];
+    this._priorStates = {};
+
+    const self = this;
+    const seats = (typeof GROUPCHAT_REPLAY_SEATS !== 'undefined') ? GROUPCHAT_REPLAY_SEATS : {
+      codex: { x: 624, y: 480 },
+      'grok-build': { x: 656, y: 448 },
+      antigravity: { x: 688, y: 480 }
+    };
+
+    this._meetingParticipants.forEach(function (pid) {
+      let char = self.characters.get(pid);
+      if (!char) {
+        const nameMap = {
+          'codex': 'Codex',
+          'antigravity': 'Antigravity',
+          'grok-build': 'Grok Build'
+        };
+        const roleMap = {
+          'codex': 'planner',
+          'antigravity': 'executor',
+          'grok-build': 'reviewer'
+        };
+        const tempAgent = {
+          id: pid,
+          name: nameMap[pid] || pid,
+          status: 'working',
+          currentTool: 'Planning session ' + sessionId,
+          type: roleMap[pid] || 'main'
+        };
+        self.addCharacter(tempAgent);
+        char = self.characters.get(pid);
+        char._isTemporary = true;
+      }
+
+      self._priorStates[pid] = {
+        x: char.x,
+        y: char.y,
+        path: char.path ? Array.from(char.path) : [],
+        pathIndex: char.pathIndex || 0,
+        bubble: char.bubble ? { ...char.bubble } : null,
+        agentState: char.agentState,
+        deskIndex: char.deskIndex,
+        deskOverflow: char.deskOverflow
+      };
+
+      const seat = seats[pid] || { x: 624, y: 480 };
+      char.x = seat.x;
+      char.y = seat.y;
+      char.path = [];
+      char.pathIndex = 0;
+      char.agentState = 'working';
+      char.deskIndex = undefined;
+      char.deskOverflow = false;
+
+      if (pid === 'codex') {
+        char.facingDir = 'right';
+        char.currentAnim = 'right_idle';
+      } else if (pid === 'grok-build') {
+        char.facingDir = 'down';
+        char.currentAnim = 'down_idle';
+      } else if (pid === 'antigravity') {
+        char.facingDir = 'left';
+        char.currentAnim = 'left_idle';
+      }
+    });
+  },
+
+  endGroupChatMeeting: function (sessionId) {
+    if (!this._meetingActive) return;
+    if (sessionId && this._meetingSessionId !== sessionId) return;
+
+    const self = this;
+    const pids = this._meetingParticipants || [];
+
+    pids.forEach(function (pid) {
+      const char = self.characters.get(pid);
+      if (!char) return;
+
+      if (char._isTemporary) {
+        self.removeCharacter(pid);
+      } else {
+        const prior = self._priorStates[pid];
+        if (prior) {
+          char.x = prior.x;
+          char.y = prior.y;
+          char.path = prior.path;
+          char.pathIndex = prior.pathIndex;
+          char.bubble = prior.bubble;
+          char.agentState = prior.agentState;
+          char.deskIndex = prior.deskIndex;
+          char.deskOverflow = prior.deskOverflow;
+        }
+      }
+    });
+
+    this._meetingActive = false;
+    this._meetingSessionId = null;
+    this._meetingParticipants = null;
+    this._priorStates = null;
+  },
+
   getCharacterArray: function () {
+    if (typeof window !== 'undefined' && window.__groupchatReplayActive && window.__groupchatReplayCharacters) {
+      return window.__groupchatReplayCharacters;
+    }
     return Array.from(this.characters.values());
   },
 };
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { officeCharacters };
+}

@@ -119,7 +119,7 @@ var officeRenderer = {
     for (let j = 0; j < sorted.length; j++) {
       const agent = sorted[j];
 
-      if (agent.agentState === 'error') {
+      if (agent.agentState === 'error' && !(typeof window !== 'undefined' && window.__groupchatReplayActive)) {
         if (Math.random() < 0.1) this.spawnEffect('warning', agent.x, agent.y - 65);
       }
 

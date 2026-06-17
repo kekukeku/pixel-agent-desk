@@ -76,46 +76,128 @@ function drawOfficeBubble(ctx, agent) {
 
   if (agent.bubble && agent.bubble.expiresAt > now) {
     const icon = agent.bubble.icon ? agent.bubble.icon + ' ' : '';
-    const text = icon + agent.bubble.text;
+    const rawText = icon + agent.bubble.text;
 
     ctx.font = 'bold 11px -apple-system, BlinkMacSystemFont, sans-serif';
-    const tw = ctx.measureText(text).width;
-    const paddingH = 10;
+    
+    // Wrap text if too long
+    const maxTextWidth = 180;
+    const lines = rawText.length > 25 ? wrapText(ctx, rawText, maxTextWidth) : [rawText];
+    
+    // Find the max line width
+    let maxW = 0;
+    for (let i = 0; i < lines.length; i++) {
+      const w = ctx.measureText(lines[i]).width;
+      if (w > maxW) maxW = w;
+    }
+    
+    const paddingH = 12;
     const paddingV = 8;
-    const boxW = tw + paddingH * 2;
-    const boxH = 16 + paddingV * 2;
+    const lineHeight = 14;
+    const boxW = maxW + paddingH * 2;
+    const boxH = lines.length * lineHeight + paddingV * 2;
     const boxX = baseX - boxW / 2;
     const boxY = bubbleY - boxH;
 
+    const isReplay = (typeof window !== 'undefined' && window.__groupchatReplayActive);
+    const borderColor = isReplay ? '#000000' : 'rgba(203, 213, 225, 0.5)';
+    const bgColor = isReplay ? '#ffffff' : 'rgba(255, 255, 255, 0.95)';
+    const textColor = '#000000';
+
     // Bubble background
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    ctx.fillStyle = bgColor;
     ctx.beginPath();
     ctx.roundRect(boxX, boxY, boxW, boxH, 8);
     ctx.fill();
 
     // Border
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(203, 213, 225, 0.5)';
+    ctx.strokeStyle = borderColor;
     ctx.stroke();
 
-    // Tail (6px half-width, 7px height — consistent with styles.css)
-    ctx.fillStyle = 'rgba(255, 255, 255, 0.95)';
+    // Tail (6px half-width, 7px height)
+    ctx.fillStyle = bgColor;
     ctx.beginPath();
     ctx.moveTo(baseX - 6, boxY + boxH);
     ctx.lineTo(baseX + 6, boxY + boxH);
     ctx.lineTo(baseX, boxY + boxH + 7);
     ctx.closePath();
     ctx.fill();
+    
     ctx.lineWidth = 2;
-    ctx.strokeStyle = 'rgba(203, 213, 225, 0.5)';
+    ctx.strokeStyle = borderColor;
     ctx.stroke();
 
     // Text
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillStyle = '#0f172a';
-    ctx.fillText(text, baseX, boxY + boxH / 2);
+    ctx.fillStyle = textColor;
+    
+    for (let i = 0; i < lines.length; i++) {
+      const lineY = boxY + paddingV + (i * lineHeight) + (lineHeight / 2);
+      ctx.fillText(lines[i], baseX, lineY);
+    }
   }
 
   ctx.restore();
+}
+
+function wrapText(ctx, text, maxWidth) {
+  if (text.length > 150) {
+    text = text.substring(0, 147) + '...';
+  }
+  const words = text.split(' ');
+  const lines = [];
+  let currentLine = '';
+
+  for (let i = 0; i < words.length; i++) {
+    const word = words[i];
+    if (!word) continue;
+    const testLine = currentLine ? currentLine + ' ' + word : word;
+    const width = ctx.measureText(testLine).width;
+    if (width <= maxWidth) {
+      currentLine = testLine;
+    } else {
+      if (currentLine) {
+        lines.push(currentLine);
+      }
+      // If the word itself is wider than maxWidth, force-split it
+      const wordWidth = ctx.measureText(word).width;
+      if (wordWidth > maxWidth) {
+        let subWord = '';
+        for (let j = 0; j < word.length; j++) {
+          const char = word[j];
+          if (ctx.measureText(subWord + char).width <= maxWidth) {
+            subWord += char;
+          } else {
+            lines.push(subWord);
+            subWord = char;
+          }
+        }
+        currentLine = subWord;
+      } else {
+        currentLine = word;
+      }
+    }
+  }
+  if (currentLine) {
+    lines.push(currentLine);
+  }
+  // Cap at 4 lines to prevent vertical overflow of the canvas
+  if (lines.length > 4) {
+    const capped = lines.slice(0, 3);
+    let lastLine = lines[3];
+    if (lastLine.length > 3) {
+      lastLine = lastLine.substring(0, lastLine.length - 3) + '...';
+    } else {
+      lastLine += '...';
+    }
+    capped.push(lastLine);
+    return capped;
+  }
+  return lines;
+}
+
+if (typeof module !== 'undefined' && module.exports) {
+  module.exports = { wrapText };
 }

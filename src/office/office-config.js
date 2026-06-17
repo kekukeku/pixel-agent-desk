@@ -161,3 +161,10 @@ const LAPTOP_ID_MAP = {
   8: 12, 9: 14, 10: 15, 11: 13,
   12: 4, 13: 5, 14: 6, 15: 7,
 };
+
+// GroupChat replay positions in the right-middle meeting room
+const GROUPCHAT_REPLAY_SEATS = {
+  codex: { x: 624, y: 480 },
+  'grok-build': { x: 656, y: 448 },
+  antigravity: { x: 688, y: 480 }
+};

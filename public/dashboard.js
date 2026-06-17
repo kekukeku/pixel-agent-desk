@@ -686,6 +686,7 @@ document.querySelectorAll('.usage-btn').forEach(b => {
 document.querySelectorAll('.nav-item').forEach(b => {
   b.onclick = () => {
     const target = b.dataset.view;
+    const oldView = state.currentView;
     document.querySelectorAll('.nav-item').forEach(x => x.classList.remove('active'));
     b.classList.add('active');
 
@@ -693,11 +694,25 @@ document.querySelectorAll('.nav-item').forEach(b => {
     const el = document.getElementById(`${target}View`);
     if (el) el.classList.add('active');
 
+    // Handle canvas switching and replay mode cleanup
+    if (target !== 'groupchat' && oldView === 'groupchat') {
+      // Switched away from GroupChat
+      pauseReplay();
+      window.__groupchatReplayActive = false;
+      window.__groupchatReplayCharacters = null;
+      switchCanvas('office');
+    }
+
     state.currentView = target;
     localStorage.setItem('mc-view', target);
 
     if (target === 'heatmap') renderHeatmapView();
     else if (target === 'usage') renderUsageView();
+    else if (target === 'groupchat') {
+      // Switched to GroupChat
+      switchCanvas('groupchat');
+      loadGroupChatSessions();
+    }
   };
 });
 
@@ -843,6 +858,438 @@ function setupNameEditHandlers() {
   });
 }
 
+// ─── GROUPCHAT REPLAY ───
+const replayState = {
+  session: null,
+  isPlaying: false,
+  currentIndex: -1,
+  playbackTimer: null,
+  speed: 2,
+  autoAdvanceDelay: 4000
+};
+
+function switchCanvas(targetView) {
+  const canvas = document.getElementById('office-canvas');
+  if (!canvas) return;
+
+  if (targetView === 'groupchat') {
+    const gcContainer = document.getElementById('groupchatCanvasContainer');
+    if (gcContainer && canvas.parentElement !== gcContainer) {
+      gcContainer.appendChild(canvas);
+    }
+  } else {
+    const liveContainer = document.querySelector('.office-canvas-panel .panel-body');
+    if (liveContainer && canvas.parentElement !== liveContainer) {
+      const placeholder = document.getElementById('pipPlaceholder');
+      if (placeholder) {
+        liveContainer.insertBefore(canvas, placeholder);
+      } else {
+        liveContainer.appendChild(canvas);
+      }
+    }
+  }
+}
+
+function initReplayCharacters() {
+  const cIndex = typeof avatarIndexFromId === 'function' ? avatarIndexFromId('codex') : 0;
+  const bIndex = typeof avatarIndexFromId === 'function' ? avatarIndexFromId('grok-build') : 1;
+  const aIndex = typeof avatarIndexFromId === 'function' ? avatarIndexFromId('antigravity') : 2;
+
+  const seats = (typeof GROUPCHAT_REPLAY_SEATS !== 'undefined') ? GROUPCHAT_REPLAY_SEATS : {
+    codex: { x: 624, y: 480 },
+    'grok-build': { x: 656, y: 448 },
+    antigravity: { x: 688, y: 480 }
+  };
+
+  window.__groupchatReplayCharacters = [
+    {
+      id: 'codex',
+      x: seats.codex.x,
+      y: seats.codex.y,
+      path: [],
+      pathIndex: 0,
+      facingDir: 'right',
+      avatarFile: (typeof AVATAR_FILES !== 'undefined' && AVATAR_FILES[cIndex]) ? AVATAR_FILES[cIndex] : 'avatar_0.webp',
+      skinIndex: cIndex,
+      currentAnim: 'right_idle',
+      animFrame: 0,
+      animTimer: 0,
+      agentState: 'thinking',
+      restTimer: 0,
+      bubble: null,
+      role: '小C',
+      metadata: {
+        name: '小C',
+        project: 'groupchat',
+        tool: null,
+        type: 'main',
+        status: 'thinking',
+        lastMessage: null
+      }
+    },
+    {
+      id: 'grok-build',
+      x: seats['grok-build'].x,
+      y: seats['grok-build'].y,
+      path: [],
+      pathIndex: 0,
+      facingDir: 'down',
+      avatarFile: (typeof AVATAR_FILES !== 'undefined' && AVATAR_FILES[bIndex]) ? AVATAR_FILES[bIndex] : 'avatar_1.webp',
+      skinIndex: bIndex,
+      currentAnim: 'down_idle',
+      animFrame: 0,
+      animTimer: 0,
+      agentState: 'working',
+      restTimer: 0,
+      bubble: null,
+      role: '小B',
+      metadata: {
+        name: '小B',
+        project: 'groupchat',
+        tool: null,
+        type: 'main',
+        status: 'working',
+        lastMessage: null
+      }
+    },
+    {
+      id: 'antigravity',
+      x: seats.antigravity.x,
+      y: seats.antigravity.y,
+      path: [],
+      pathIndex: 0,
+      facingDir: 'left',
+      avatarFile: (typeof AVATAR_FILES !== 'undefined' && AVATAR_FILES[aIndex]) ? AVATAR_FILES[aIndex] : 'avatar_2.webp',
+      skinIndex: aIndex,
+      currentAnim: 'left_idle',
+      animFrame: 0,
+      animTimer: 0,
+      agentState: 'working',
+      restTimer: 0,
+      bubble: null,
+      role: '小A',
+      metadata: {
+        name: '小A',
+        project: 'groupchat',
+        tool: null,
+        type: 'main',
+        status: 'working',
+        lastMessage: null
+      }
+    }
+  ];
+}
+
+async function loadGroupChatSessions() {
+  try {
+    const res = await fetch('/api/planning/sessions' + window.location.search);
+    const sessions = await res.json();
+    const listEl = document.getElementById('groupchatSessionsList');
+    if (!listEl) return;
+    listEl.innerHTML = '';
+
+    if (!sessions || sessions.length === 0) {
+      listEl.innerHTML = '<div style="font-size:0.8rem;color:var(--color-text-muted);text-align:center;padding:16px;">No planning sessions found.</div>';
+      return;
+    }
+
+    sessions.sort((a, b) => new Date(b.startedAt || 0) - new Date(a.startedAt || 0));
+
+    sessions.forEach(s => {
+      const item = document.createElement('div');
+      item.className = 'groupchat-session-item';
+      item.dataset.id = s.sessionId;
+      
+      const dateStr = s.startedAt ? new Date(s.startedAt).toLocaleString() : 'Unknown Time';
+      item.innerHTML = `
+        <div class="groupchat-session-title">${escapeHtml(s.title || ('Session ' + s.sessionId))}</div>
+        <div class="groupchat-session-meta">
+          Task: ${escapeHtml(s.taskNum || 'N/A')} | Messages: ${s.messageCount || 0}<br>
+          ${escapeHtml(dateStr)}
+        </div>
+      `;
+      
+      item.onclick = () => selectGroupChatSession(s.sessionId);
+      listEl.appendChild(item);
+    });
+
+    const activeId = localStorage.getItem('mc-selected-groupchat');
+    if (activeId && sessions.some(s => s.sessionId === activeId)) {
+      selectGroupChatSession(activeId);
+    }
+  } catch (err) {
+    console.error('Failed to load planning sessions:', err);
+  }
+}
+
+async function selectGroupChatSession(id) {
+  document.querySelectorAll('.groupchat-session-item').forEach(x => {
+    x.classList.toggle('active', x.dataset.id === id);
+  });
+  localStorage.setItem('mc-selected-groupchat', id);
+
+  pauseReplay();
+
+  const emptyEl = document.getElementById('groupchatEmptyState');
+  const splitEl = document.getElementById('groupchatSplitView');
+  if (emptyEl) emptyEl.style.display = 'none';
+  if (splitEl) splitEl.style.display = 'flex';
+
+  try {
+    const jsonRes = await fetch(`/api/planning/sessions/${id}`);
+
+    if (!jsonRes.ok) {
+      let errorMsg = 'Failed to load session details';
+      try {
+        const errData = await jsonRes.json();
+        if (errData && errData.error) {
+          errorMsg = errData.error;
+        }
+      } catch (e) {}
+      
+      if (splitEl) splitEl.style.display = 'none';
+      if (emptyEl) {
+        emptyEl.style.display = 'flex';
+        const iconEl = document.getElementById('groupchatEmptyIcon');
+        const textEl = document.getElementById('groupchatEmptyText');
+        if (iconEl) {
+          if (errorMsg.includes('Unsupported schema version')) {
+            iconEl.textContent = '⚠️';
+          } else if (jsonRes.status === 404) {
+            iconEl.textContent = '🔍';
+          } else {
+            iconEl.textContent = '❌';
+          }
+        }
+        if (textEl) {
+          if (errorMsg.includes('Unsupported schema version')) {
+            textEl.innerHTML = `<span style="color:#ff7b72; font-weight:bold; font-size:1.05rem; display:block; margin-bottom:4px;">Unsupported Schema Version</span>
+                                This session uses an incompatible schema. Please update your application to view it.`;
+          } else if (jsonRes.status === 404) {
+            textEl.innerHTML = `<span style="color:#ff7b72; font-weight:bold; font-size:1.05rem; display:block; margin-bottom:4px;">Session Not Found</span>
+                                The selected planning session could not be found.`;
+          } else {
+            textEl.innerHTML = `<span style="color:#f85149; font-weight:bold; font-size:1.05rem; display:block; margin-bottom:4px;">Failed to Load Session</span>
+                                Error: ${escapeHtml(errorMsg)}`;
+          }
+        }
+      }
+      return;
+    }
+
+    // Reset empty state to default values on success
+    if (emptyEl) {
+      const iconEl = document.getElementById('groupchatEmptyIcon');
+      const textEl = document.getElementById('groupchatEmptyText');
+      if (iconEl) iconEl.textContent = '💬';
+      if (textEl) textEl.textContent = 'Select a GroupChat session to view details and replay.';
+    }
+
+    const sessionData = await jsonRes.json();
+    replayState.session = sessionData;
+    replayState.currentIndex = -1;
+
+    const transPanel = document.getElementById('groupchatTranscriptPanel');
+    if (transPanel) {
+      transPanel.innerHTML = '';
+      
+      const h1 = document.createElement('h1');
+      h1.textContent = sessionData.title || `Planning Session ${id}`;
+      transPanel.appendChild(h1);
+
+      const metaDiv = document.createElement('div');
+      metaDiv.style.cssText = 'font-size:0.8rem;color:var(--color-text-muted);margin-bottom:20px;';
+      metaDiv.innerHTML = `
+        <strong>Task:</strong> ${escapeHtml(sessionData.taskNum || 'N/A')}<br>
+        <strong>Started:</strong> ${sessionData.startedAt ? new Date(sessionData.startedAt).toLocaleString() : 'N/A'}<br>
+        <strong>Finished:</strong> ${sessionData.finishedAt ? new Date(sessionData.finishedAt).toLocaleString() : 'N/A'}
+      `;
+      transPanel.appendChild(metaDiv);
+
+      const msgList = document.createElement('div');
+      sessionData.messages.forEach((msg, idx) => {
+        const block = document.createElement('div');
+        block.className = 'groupchat-message-block';
+        block.dataset.msgIdx = idx;
+        
+        const part = sessionData.participants.find(p => p.speakerId === msg.speakerId);
+        const name = part ? part.speakerName : msg.speakerId;
+        const speakerClass = msg.speakerId;
+
+        block.innerHTML = `
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; flex-wrap: wrap; gap: 6px;">
+            <div class="groupchat-speaker-badge ${speakerClass}">${escapeHtml(name)} (${escapeHtml(part?.role || 'participant')})</div>
+            <div class="groupchat-message-meta" style="font-size: 0.75rem; color: var(--color-text-muted);">
+              Round ${msg.round || 'N/A'} &bull; Step: ${escapeHtml(msg.stepId || 'N/A')} &bull; ${msg.at ? new Date(msg.at).toLocaleTimeString() : 'N/A'}
+            </div>
+          </div>
+          <div class="groupchat-message-content" style="white-space: pre-wrap;">${escapeHtml(msg.content)}</div>
+        `;
+        
+        block.onclick = () => {
+          seekTo(idx);
+          pauseReplay();
+        };
+        msgList.appendChild(block);
+      });
+      transPanel.appendChild(msgList);
+    }
+
+    const slider = document.getElementById('gcProgressSlider');
+    if (slider) {
+      slider.max = sessionData.messages.length - 1;
+      slider.value = 0;
+    }
+
+    window.__groupchatReplayActive = true;
+    initReplayCharacters();
+
+    seekTo(0);
+
+  } catch (err) {
+    console.error('Failed to load session details:', err);
+  }
+}
+
+function seekTo(index) {
+  if (!replayState.session || replayState.session.messages.length === 0) return;
+  
+  index = Math.max(0, Math.min(index, replayState.session.messages.length - 1));
+  replayState.currentIndex = index;
+
+  const slider = document.getElementById('gcProgressSlider');
+  if (slider) slider.value = index;
+
+  const label = document.getElementById('gcProgressLabel');
+  if (label) {
+    label.textContent = `${index + 1} / ${replayState.session.messages.length}`;
+  }
+
+  document.querySelectorAll('.groupchat-message-block').forEach(x => {
+    x.classList.toggle('groupchat-message-highlight', parseInt(x.dataset.msgIdx) === index);
+  });
+
+  const activeBlock = document.querySelector(`.groupchat-message-block[data-msg-idx="${index}"]`);
+  if (activeBlock) {
+    activeBlock.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+  }
+
+  const msg = replayState.session.messages[index];
+  if (window.__groupchatReplayCharacters) {
+    window.__groupchatReplayCharacters.forEach(char => {
+      if (char.id === msg.speakerId) {
+        let dispText = msg.content;
+        if (dispText.length >= 200) {
+          dispText = dispText.substring(0, 197) + '...';
+        }
+        char.bubble = {
+          text: dispText,
+          icon: null,
+          expiresAt: Infinity
+        };
+      } else {
+        char.bubble = null;
+      }
+    });
+  }
+}
+
+function startReplay() {
+  if (replayState.isPlaying) return;
+  if (!replayState.session || replayState.session.messages.length === 0) return;
+
+  replayState.isPlaying = true;
+  const btn = document.getElementById('gcPlayPauseBtn');
+  if (btn) btn.textContent = '⏸';
+
+  if (replayState.currentIndex >= replayState.session.messages.length - 1) {
+    seekTo(0);
+  }
+
+  runPlaybackTick();
+}
+
+function runPlaybackTick() {
+  if (!replayState.isPlaying) return;
+
+  const delay = replayState.autoAdvanceDelay / replayState.speed;
+  replayState.playbackTimer = setTimeout(() => {
+    const nextIdx = replayState.currentIndex + 1;
+    if (nextIdx < replayState.session.messages.length) {
+      seekTo(nextIdx);
+      runPlaybackTick();
+    } else {
+      pauseReplay();
+    }
+  }, delay);
+}
+
+function pauseReplay() {
+  replayState.isPlaying = false;
+  const btn = document.getElementById('gcPlayPauseBtn');
+  if (btn) btn.textContent = '▶';
+  if (replayState.playbackTimer) {
+    clearTimeout(replayState.playbackTimer);
+    replayState.playbackTimer = null;
+  }
+}
+
+function stepPrev() {
+  pauseReplay();
+  seekTo(replayState.currentIndex - 1);
+}
+
+function stepNext() {
+  pauseReplay();
+  seekTo(replayState.currentIndex + 1);
+}
+
+function setupGroupChatControls() {
+  const playBtn = document.getElementById('gcPlayPauseBtn');
+  if (playBtn) {
+    playBtn.onclick = () => {
+      if (replayState.isPlaying) {
+        pauseReplay();
+      } else {
+        startReplay();
+      }
+    };
+  }
+
+  const prevBtn = document.getElementById('gcStepPrevBtn');
+  if (prevBtn) prevBtn.onclick = stepPrev;
+
+  const restartBtn = document.getElementById('gcRestartBtn');
+  if (restartBtn) {
+    restartBtn.onclick = () => {
+      seekTo(0);
+      startReplay();
+    };
+  }
+
+  const nextBtn = document.getElementById('gcStepNextBtn');
+  if (nextBtn) nextBtn.onclick = stepNext;
+
+  const slider = document.getElementById('gcProgressSlider');
+  if (slider) {
+    slider.oninput = (e) => {
+      seekTo(parseInt(e.target.value));
+      pauseReplay();
+    };
+  }
+
+  const speedSelect = document.getElementById('gcSpeedSelect');
+  if (speedSelect) {
+    speedSelect.onchange = (e) => {
+      replayState.speed = parseFloat(e.target.value);
+      if (replayState.isPlaying) {
+        pauseReplay();
+        startReplay();
+      }
+    };
+  }
+}
+
 async function loadUsername() {
   try {
     const res = await fetch('/api/profile');
@@ -871,14 +1318,22 @@ function initApp() {
   if (tgtEl) tgtEl.classList.add('active');
 
   setupNameEditHandlers();
+  setupGroupChatControls();
   loadUsername();
   connectSSE();
   if (target === 'heatmap') renderHeatmapView();
   else if (target === 'usage') renderUsageView();
+  else if (target === 'groupchat') {
+    loadGroupChatSessions();
+  }
 
   // We rely on standard office-init.js to boot the canvas logic
   if (typeof initOffice === 'function') setTimeout(() => {
-    initOffice();
+    initOffice().then(() => {
+      if (state.currentView === 'groupchat') {
+        switchCanvas('groupchat');
+      }
+    });
     setupOfficeClickHandler();
   }, 100);
 }

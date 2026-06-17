@@ -6,6 +6,9 @@
 // Mock dependencies before requiring the module
 jest.mock('fs', () => ({
   readFile: jest.fn(),
+  readFileSync: jest.fn(),
+  readdirSync: jest.fn(),
+  existsSync: jest.fn(),
 }));
 
 jest.mock('http', () => {
@@ -755,6 +758,175 @@ describe('dashboard-server', () => {
 
       expect(res.writeHead).toHaveBeenCalledWith(403, { 'Content-Type': 'application/json' });
       expect(res.end).toHaveBeenCalledWith(expect.stringContaining('Forbidden'));
+    });
+  });
+
+  describe('GroupChat Planning API', () => {
+    const fs = require('fs');
+
+    beforeEach(() => {
+      fs.existsSync.mockReset();
+      fs.readdirSync.mockReset();
+      fs.readFileSync.mockReset();
+    });
+
+    test('GET /api/planning/sessions returns empty list when planning dir does not exist', () => {
+      fs.existsSync.mockReturnValue(false);
+
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      expect(JSON.parse(res.end.mock.calls[0][0])).toEqual([]);
+    });
+
+    test('GET /api/planning/sessions lists valid sessions from PLANNING/', () => {
+      fs.existsSync.mockImplementation((path) => path.endsWith('PLANNING'));
+      fs.readdirSync.mockReturnValue(['groupchat_001.json', 'groupchat_002.json', 'draft_001.md', 'invalid_file.json']);
+      fs.readFileSync.mockImplementation((path) => {
+        if (path.endsWith('groupchat_001.json')) {
+          return JSON.stringify({
+            schemaVersion: 1,
+            sessionId: '001',
+            title: 'Session 001',
+            startedAt: '2026-06-16T12:00:00.000Z',
+            finishedAt: '2026-06-16T12:05:00.000Z',
+            taskNum: '013',
+            messages: [{}, {}]
+          });
+        }
+        if (path.endsWith('groupchat_002.json')) {
+          return JSON.stringify({
+            schemaVersion: 1,
+            sessionId: '002',
+            title: 'Session 002',
+            startedAt: '2026-06-16T13:00:00.000Z',
+            finishedAt: '2026-06-16T13:05:00.000Z',
+            taskNum: '014',
+            messages: [{}, {}, {}]
+          });
+        }
+        throw new Error('File not found');
+      });
+
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body).toHaveLength(2);
+      expect(body[0].sessionId).toBe('002');
+      expect(body[0].taskNum).toBe('014');
+      expect(body[0].messageCount).toBe(3);
+      expect(body[1].sessionId).toBe('001');
+      expect(body[1].taskNum).toBe('013');
+      expect(body[1].messageCount).toBe(2);
+    });
+
+    test('GET /api/planning/sessions includes fixtures when dev mode query param is active', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.readdirSync.mockImplementation((path) => {
+        if (path.endsWith('fixtures')) {
+          return ['groupchat_003.json'];
+        }
+        return ['groupchat_001.json'];
+      });
+      fs.readFileSync.mockImplementation((path) => {
+        if (path.endsWith('groupchat_001.json')) {
+          return JSON.stringify({
+            schemaVersion: 1,
+            sessionId: '001',
+            title: 'Session 001',
+            startedAt: '2026-06-16T12:00:00.000Z',
+            taskNum: '013',
+            messages: [{}, {}]
+          });
+        }
+        if (path.endsWith('groupchat_003.json')) {
+          return JSON.stringify({
+            schemaVersion: 1,
+            sessionId: '003',
+            title: 'Fixture 003',
+            startedAt: '2026-06-16T14:00:00.000Z',
+            taskNum: '014',
+            messages: [{}, {}, {}, {}]
+          });
+        }
+        throw new Error('Not found');
+      });
+
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions?fixtures=true');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body).toHaveLength(2);
+      expect(body[0].sessionId).toBe('003');
+      expect(body[0].taskNum).toBe('014');
+      expect(body[0].messageCount).toBe(4);
+      expect(body[1].sessionId).toBe('001');
+      expect(body[1].taskNum).toBe('013');
+      expect(body[1].messageCount).toBe(2);
+    });
+
+    test('GET /api/planning/sessions/:id returns session details', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify({
+        schemaVersion: 1,
+        sessionId: '123',
+        title: 'Session 123',
+        messages: []
+      }));
+
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions/123');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body.sessionId).toBe('123');
+      expect(body.schemaVersion).toBe(1);
+    });
+
+    test('GET /api/planning/sessions/:id rejects non-numeric session IDs', () => {
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions/abc');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body.error).toBe('Invalid session ID');
+    });
+
+    test('GET /api/planning/sessions/:id rejects path traversal attempts', () => {
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions/../123');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+    });
+
+    test('GET /api/planning/sessions/:id rejects unsupported schema version', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue(JSON.stringify({
+        schemaVersion: 2,
+        sessionId: '123'
+      }));
+
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions/123');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(400, { 'Content-Type': 'application/json' });
+      const body = JSON.parse(res.end.mock.calls[0][0]);
+      expect(body.error).toBe('Unsupported schema version');
+    });
+
+    test('GET /api/planning/sessions/:id/md returns markdown content', () => {
+      fs.existsSync.mockReturnValue(true);
+      fs.readFileSync.mockReturnValue('# Markdown transcript');
+
+      const { req, res } = createMockReqRes('GET', '/api/planning/sessions/123/md');
+      handler(req, res);
+
+      expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+      expect(res.end).toHaveBeenCalledWith('# Markdown transcript');
     });
   });
 });

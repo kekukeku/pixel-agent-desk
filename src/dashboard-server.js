@@ -483,6 +483,220 @@ function handlePutAgentName(req, res, url) {
     });
 }
 
+const planningDir = path.resolve(__dirname, '..', 'PLANNING');
+
+function isDevMode(url) {
+  const fixturesQuery = url ? url.searchParams.get('fixtures') : null;
+  return fixturesQuery === 'true' || 
+         process.env.NODE_ENV === 'development' || 
+         process.env.DEV_MODE === 'true';
+}
+
+function getSessions(includeFixtures = false) {
+  const sessions = [];
+  
+  if (fs.existsSync(planningDir)) {
+    try {
+      const files = fs.readdirSync(planningDir);
+      for (const file of files) {
+        if (file.startsWith('groupchat_') && file.endsWith('.json')) {
+          const match = file.match(/^groupchat_(\d+)\.json$/);
+          if (match) {
+            const sessionId = match[1];
+            try {
+              const content = fs.readFileSync(path.join(planningDir, file), 'utf8');
+              const data = JSON.parse(content);
+              if (data.schemaVersion === 1) {
+                sessions.push({
+                  sessionId,
+                  title: data.title || `Session ${sessionId}`,
+                  startedAt: data.startedAt,
+                  finishedAt: data.finishedAt,
+                  taskNum: data.taskNum || 'N/A',
+                  messageCount: data.messages ? data.messages.length : 0
+                });
+              }
+            } catch (e) {
+              // ignore malformed
+            }
+          }
+        }
+      }
+    } catch (e) {
+      // ignore read error
+    }
+  }
+
+  if (includeFixtures) {
+    const fixturesDir = path.join(planningDir, 'fixtures');
+    if (fs.existsSync(fixturesDir)) {
+      try {
+        const files = fs.readdirSync(fixturesDir);
+        for (const file of files) {
+          if (file.startsWith('groupchat_') && file.endsWith('.json')) {
+            const match = file.match(/^groupchat_(\d+)\.json$/);
+            if (match) {
+              const sessionId = match[1];
+              try {
+                const content = fs.readFileSync(path.join(fixturesDir, file), 'utf8');
+                const data = JSON.parse(content);
+                if (data.schemaVersion === 1) {
+                  sessions.push({
+                    sessionId,
+                    title: data.title || `Session ${sessionId}`,
+                    startedAt: data.startedAt,
+                    finishedAt: data.finishedAt,
+                    taskNum: data.taskNum || 'N/A',
+                    messageCount: data.messages ? data.messages.length : 0
+                  });
+                }
+              } catch (e) {
+                // ignore malformed
+              }
+            }
+          }
+        }
+      } catch (e) {
+        // ignore read error
+      }
+    }
+  }
+
+  // Sort: newest first
+  sessions.sort((a, b) => {
+    const timeA = a.startedAt ? new Date(a.startedAt).getTime() : 0;
+    const timeB = b.startedAt ? new Date(b.startedAt).getTime() : 0;
+    if (timeB !== timeA) return timeB - timeA;
+    return parseInt(b.sessionId, 10) - parseInt(a.sessionId, 10);
+  });
+
+  return sessions;
+}
+
+function validateSessionIdAndGetPath(id, ext = '.json') {
+  if (!/^\d+$/.test(id)) {
+    return { error: 'Invalid session ID', code: 400 };
+  }
+
+  const filename = `groupchat_${id}${ext}`;
+  
+  // Try main PLANNING directory
+  const resolvedPath = path.resolve(planningDir, filename);
+  const rel = path.relative(planningDir, resolvedPath);
+  if (rel.startsWith('..') || path.isAbsolute(rel)) {
+    return { error: 'Forbidden', code: 400 };
+  }
+
+  if (fs.existsSync(resolvedPath)) {
+    return { path: resolvedPath };
+  }
+
+  // Try fixtures directory
+  const fixturesDir = path.join(planningDir, 'fixtures');
+  const resolvedFixturePath = path.resolve(fixturesDir, filename);
+  const relFixture = path.relative(fixturesDir, resolvedFixturePath);
+  if (relFixture.startsWith('..') || path.isAbsolute(relFixture)) {
+    return { error: 'Forbidden', code: 400 };
+  }
+
+  if (fs.existsSync(resolvedFixturePath)) {
+    return { path: resolvedFixturePath, isFixture: true };
+  }
+
+  return { error: 'Session not found', code: 404 };
+}
+
+function handleGetPlanningSessions(req, res, url) {
+  const includeFixtures = isDevMode(url);
+  const sessions = getSessions(includeFixtures);
+  res.writeHead(200, { 'Content-Type': 'application/json' });
+  res.end(JSON.stringify(sessions));
+}
+
+function handleGetPlanningSessionById(req, res, url) {
+  const parts = url.pathname.split('/');
+  const id = parts[4];
+
+  if (!id) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing session ID' }));
+    return;
+  }
+
+  if (parts.length > 5 && !(parts.length === 6 && parts[5] === '')) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session ID' }));
+    return;
+  }
+
+  const validation = validateSessionIdAndGetPath(id, '.json');
+  if (validation.error) {
+    res.writeHead(validation.code, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: validation.error }));
+    return;
+  }
+
+  if (validation.isFixture && !isDevMode(url)) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(validation.path, 'utf8');
+    const data = JSON.parse(content);
+    if (data.schemaVersion !== 1) {
+      res.writeHead(400, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ error: 'Unsupported schema version' }));
+      return;
+    }
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(data));
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to read session file' }));
+  }
+}
+
+function handleGetPlanningSessionMarkdown(req, res, url) {
+  const parts = url.pathname.split('/');
+  const id = parts[4];
+
+  if (!id) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Missing session ID' }));
+    return;
+  }
+
+  if (parts.length > 6 && !(parts.length === 7 && parts[6] === '')) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session ID' }));
+    return;
+  }
+
+  const validation = validateSessionIdAndGetPath(id, '.md');
+  if (validation.error) {
+    res.writeHead(validation.code, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: validation.error }));
+    return;
+  }
+
+  if (validation.isFixture && !isDevMode(url)) {
+    res.writeHead(404, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Session not found' }));
+    return;
+  }
+
+  try {
+    const content = fs.readFileSync(validation.path, 'utf8');
+    res.writeHead(200, { 'Content-Type': 'text/markdown; charset=utf-8' });
+    res.end(content);
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to read markdown file' }));
+  }
+}
+
 /** Route table: "METHOD /path" → handler */
 const apiRoutes = {
   'GET /api/events': handleSSE,
@@ -493,6 +707,7 @@ const apiRoutes = {
   'GET /api/health': handleGetHealth,
   'GET /api/profile': handleGetProfile,
   'GET /api/name-map': handleGetNameMap,
+  'GET /api/planning/sessions': handleGetPlanningSessions,
 };
 
 /**
@@ -506,6 +721,25 @@ function handleAPIRequest(req, res, url) {
   if (req.method === 'OPTIONS') {
     res.writeHead(200);
     res.end();
+    return;
+  }
+
+  // Check for path traversal in planning API requests
+  if (req.url.includes('/api/planning/') && (req.url.includes('..') || req.url.includes('%2e') || req.url.includes('%2E'))) {
+    res.writeHead(400, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Invalid session ID' }));
+    return;
+  }
+
+  // Parameterized: GET /api/planning/sessions/:id/md
+  if (url.pathname.startsWith('/api/planning/sessions/') && url.pathname.endsWith('/md') && req.method === 'GET') {
+    handleGetPlanningSessionMarkdown(req, res, url);
+    return;
+  }
+
+  // Parameterized: GET /api/planning/sessions/:id
+  if (url.pathname.startsWith('/api/planning/sessions/') && req.method === 'GET') {
+    handleGetPlanningSessionById(req, res, url);
     return;
   }
 

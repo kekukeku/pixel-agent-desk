@@ -42,6 +42,12 @@
           </svg>
           Activity Mesh
         </button>
+        <button class="nav-item" data-view="groupchat" id="navGroupChat">
+          <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24">
+            <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+          </svg>
+          GroupChat Review
+        </button>
         <button class="nav-item" data-view="usage">
           <svg width="14" height="14" fill="none" stroke="currentColor" stroke-width="2">
             <line x1="18" y1="20" x2="18" y2="10"></line>
@@ -213,6 +219,69 @@
           <div class="panel model-breakdown" id="modelBreakdownRoot" style="display:none;">
             <div class="panel-header">Model Breakdown</div>
             <div class="panel-body" id="modelBreakdownBody"></div>
+          </div>
+        </div>
+
+        <!-- =================== GROUPCHAT VIEW =================== -->
+        <div id="groupchatView" class="view-section">
+          <div class="groupchat-container">
+            <!-- Sidebar with Sessions List -->
+            <div class="groupchat-sidebar">
+              <h2 style="font-size:1.1rem; margin-bottom:4px; margin-top:0;">GroupChat History</h2>
+              <div style="font-size:0.8rem; color:var(--color-text-muted); margin-bottom:8px;">Select a collaborative planning session to review.</div>
+              <div class="groupchat-sessions-list" id="groupchatSessionsList">
+                <!-- Session items populated via JS -->
+              </div>
+            </div>
+            
+            <!-- Main Content Area -->
+            <div class="groupchat-main" id="groupchatMainArea">
+              <!-- Empty state before session selection -->
+              <div class="groupchat-empty-state" id="groupchatEmptyState">
+                <div class="groupchat-empty-icon">💬</div>
+                <div>Select a session from the sidebar to review transcript and replay office scenes.</div>
+              </div>
+              
+              <!-- Split view of transcript and office visualization -->
+              <div class="groupchat-split-view" id="groupchatSplitView" style="display:none;">
+                <!-- Left: Transcript panel -->
+                <div class="groupchat-transcript-panel" id="groupchatTranscriptPanel">
+                  <!-- Transcript contents populated via JS -->
+                </div>
+                
+                <!-- Right: Visual panel -->
+                <div class="groupchat-visual-panel">
+                  <div class="groupchat-visual-header">
+                    <span class="groupchat-visual-title" id="groupchatVisualTitle">Office Visualizer</span>
+                    <span class="panel-header-badge" style="background:#2ea043; color:#ffffff;">REPLAY</span>
+                  </div>
+                  <div class="groupchat-canvas-container" id="groupchatCanvasContainer">
+                    <!-- Canvas will be moved here dynamically from the officeView panel -->
+                  </div>
+                  <div class="groupchat-controls">
+                    <div class="groupchat-playback-bar">
+                      <button class="groupchat-btn" id="gcPlayPauseBtn" title="Play">▶</button>
+                      <button class="groupchat-btn" id="gcRestartBtn" title="Restart">🔄</button>
+                      <button class="groupchat-btn" id="gcStepPrevBtn" title="Previous Step">⏮</button>
+                      <button class="groupchat-btn" id="gcStepNextBtn" title="Next Step">⏭</button>
+                      <input type="range" class="groupchat-progress-slider" id="gcProgressSlider" min="0" max="0" value="0">
+                      <span class="groupchat-time-label" id="gcProgressLabel">0 / 0</span>
+                    </div>
+                    <div class="groupchat-buttons">
+                      <select class="groupchat-speed-select" id="gcSpeedSelect">
+                        <option value="1">1.0x</option>
+                        <option value="2" selected>2.0x (Auto)</option>
+                        <option value="5">5.0x</option>
+                        <option value="10">10.0x</option>
+                      </select>
+                      <span style="font-size:0.75rem; color:var(--color-text-muted); margin-left:auto;">
+                        Replay coordinates for 小C, 小B, 小A forced to right-middle meeting room.
+                      </span>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
           </div>
         </div>
 
