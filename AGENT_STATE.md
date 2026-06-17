@@ -40,6 +40,7 @@ To prevent state drift between different folders and GitHub PR statuses, this re
 | **TASK-019** | `MERGED` | [task/task_019_team_rules_governance_updates](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_019.md) | 2026-06-17 |
 | **TASK-020** | `MERGED` | [task/task_020_roster_avatar_portrait_picker](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_020.md) | 2026-06-17 |
 | **TASK-021** | `MERGED` | [task/task_021_agent_cowork_local_package](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_021.md) | 2026-06-17 |
+| **TASK-022** | `UNDER_REVIEW` | [task/task_022_review_audit_rules_and_tone](file:///Users/kevinkuo/My%20Drive/all/Github%20projects/pixel-agent-desk/TASKS/task_022.md) | 2026-06-17 |
 
 
 ---
