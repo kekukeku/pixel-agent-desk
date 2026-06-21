@@ -168,11 +168,23 @@ function registerDefaultAdapters(options) {
     return cf;
   })();
 
+  const antigravityAdapter = (function () {
+    const af = require('./antigravityIntegration');
+    if (typeof af.createAntigravityIntegration === 'function') {
+      return af.createAntigravityIntegration({
+        debugLog: log,
+        forwarderPath: opts.forwarderPath || null,
+        homeDir: opts.homeDir || undefined,
+      });
+    }
+    return af;
+  })();
+
   const allModules = [
     require('./claudeIntegration'),
     codexAdapter,
     grokAdapter,
-    require('./antigravityIntegration'),
+    antigravityAdapter,
     require('./opencodeIntegration')
   ];
 
