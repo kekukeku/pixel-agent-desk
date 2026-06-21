@@ -79,6 +79,10 @@ function registerGrokHooks(debugLog, options) {
   log('[Grok] Checking hook installation...');
 
   try {
+    if (!fs.existsSync(forwarderPath)) {
+      log(`[Grok] Forwarder not found at ${forwarderPath} — skipping`);
+      return false;
+    }
     const expected = buildExpectedContent(forwarderPath);
 
     if (fs.existsSync(targetPath)) {

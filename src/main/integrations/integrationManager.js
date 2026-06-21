@@ -144,10 +144,22 @@ function registerDefaultAdapters(options) {
   const appConfig = opts.appConfig || {};
   const log = opts.debugLog || debugLog;
 
+  const grokAdapter = (function () {
+    const gf = require('./grokIntegration');
+    if (typeof gf.createGrokIntegration === 'function') {
+      return gf.createGrokIntegration({
+        debugLog: log,
+        forwarderPath: opts.forwarderPath || null,
+        homeDir: opts.homeDir || undefined,
+      });
+    }
+    return gf;
+  })();
+
   const allModules = [
     require('./claudeIntegration'),
     require('./codexIntegration'),
-    require('./grokIntegration'),
+    grokAdapter,
     require('./antigravityIntegration'),
     require('./opencodeIntegration')
   ];

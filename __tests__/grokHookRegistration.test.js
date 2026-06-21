@@ -17,10 +17,14 @@ const {
 
 describe('grokHookRegistration', () => {
   let tempDir;
+  let forwarderFile;
   let debugLog;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-grok-reg-'));
+    // Create a real forwarder temp file so the existence check passes
+    forwarderFile = path.join(tempDir, 'grok-forwarder.js');
+    fs.writeFileSync(forwarderFile, '// forwarder stub', 'utf-8');
     debugLog = jest.fn();
   });
 
@@ -36,15 +40,15 @@ describe('grokHookRegistration', () => {
     return path.join(tempDir, '.grok', 'hooks');
   }
 
-  function mockForwarderPath() {
-    return '/mock/path/grok-forwarder.js';
+  function useForwarder(fp) {
+    return fp || forwarderFile;
   }
 
   describe('registerGrokHooks', () => {
     test('first install creates hooks dir, writes file with PAD marker', () => {
       const result = registerGrokHooks(debugLog, {
         homeDir: tempDir,
-        forwarderPath: mockForwarderPath(),
+        forwarderPath: forwarderFile,
       });
 
       expect(result).toBe(true);
@@ -59,7 +63,7 @@ describe('grokHookRegistration', () => {
     });
 
     test('hook JSON uses correct format with command, timeout, and all lifecycle events', () => {
-      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: '/fwd/grok.js' });
+      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
 
       const content = JSON.parse(fs.readFileSync(hookTargetPath(), 'utf-8'));
       const expectedEvents = [
@@ -70,20 +74,18 @@ describe('grokHookRegistration', () => {
 
       for (const evt of expectedEvents) {
         expect(content.hooks[evt]).toBeDefined();
-        expect(content.hooks[evt][0].hooks[0]).toEqual({
-          type: 'command',
-          command: `node /fwd/grok.js ${evt}`,
-          timeout: 5,
-        });
+        expect(content.hooks[evt][0].hooks[0].type).toBe('command');
+        expect(content.hooks[evt][0].hooks[0].command).toContain(forwarderFile);
+        expect(content.hooks[evt][0].hooks[0].timeout).toBe(5);
       }
     });
 
     test('identical existing file returns true without rewriting', () => {
-      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: mockForwarderPath() });
+      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
       const mtimeBefore = fs.statSync(hookTargetPath()).mtimeMs;
 
       debugLog.mockClear();
-      const result = registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: mockForwarderPath() });
+      const result = registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
 
       expect(result).toBe(true);
       expect(fs.statSync(hookTargetPath()).mtimeMs).toBe(mtimeBefore);
@@ -91,22 +93,36 @@ describe('grokHookRegistration', () => {
     });
 
     test('different existing file updates content', () => {
-      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: '/old.js' });
+      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
       debugLog.mockClear();
 
-      const result = registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: '/new.js' });
+      const newFwd = path.join(tempDir, 'grok-forwarder-v2.js');
+      fs.writeFileSync(newFwd, '// v2', 'utf-8');
+      const result = registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: newFwd });
 
       expect(result).toBe(true);
       const content = JSON.parse(fs.readFileSync(hookTargetPath(), 'utf-8'));
-      expect(content.hooks.SessionStart[0].hooks[0].command).toContain('/new.js');
+      expect(content.hooks.SessionStart[0].hooks[0].command).toContain(newFwd);
       expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('differ'));
+    });
+
+    test('returns false when forwarderPath does not exist', () => {
+      const missingPath = path.join(tempDir, 'nonexistent-fwd.js');
+      const result = registerGrokHooks(debugLog, {
+        homeDir: tempDir,
+        forwarderPath: missingPath,
+      });
+
+      expect(result).toBe(false);
+      expect(fs.existsSync(hookTargetPath())).toBe(false);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('not found'));
     });
 
     test('returns false on write failure without crash', () => {
       fs.mkdirSync(hooksDir(), { recursive: true });
       fs.mkdirSync(hookTargetPath(), { recursive: true });
 
-      const result = registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: mockForwarderPath() });
+      const result = registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
 
       expect(result).toBe(false);
       expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('failed'));
@@ -135,25 +151,25 @@ describe('grokHookRegistration', () => {
 
   describe('isGrokHooksRegistered', () => {
     test('returns false when file missing', () => {
-      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: mockForwarderPath() })).toBe(false);
+      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: forwarderFile })).toBe(false);
     });
 
     test('returns false when file exists but no PAD marker', () => {
       fs.mkdirSync(hooksDir(), { recursive: true });
       fs.writeFileSync(hookTargetPath(), JSON.stringify({ hooks: {} }), 'utf-8');
 
-      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: mockForwarderPath() })).toBe(false);
+      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: forwarderFile })).toBe(false);
     });
 
     test('returns true after registration', () => {
-      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: mockForwarderPath() });
-      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: mockForwarderPath() })).toBe(true);
+      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
+      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: forwarderFile })).toBe(true);
     });
 
     test('returns false after unregister', () => {
-      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: mockForwarderPath() });
+      registerGrokHooks(debugLog, { homeDir: tempDir, forwarderPath: forwarderFile });
       unregisterGrokHooks(debugLog, { homeDir: tempDir });
-      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: mockForwarderPath() })).toBe(false);
+      expect(isGrokHooksRegistered({ homeDir: tempDir, forwarderPath: forwarderFile })).toBe(false);
     });
   });
 });

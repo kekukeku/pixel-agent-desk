@@ -13,13 +13,16 @@ const { createGrokIntegration } = require('../src/main/integrations/grokIntegrat
 
 describe('grokIntegration', () => {
   let tempDir;
+  let forwarderFile;
   let adapter;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-grok-int-'));
+    forwarderFile = path.join(tempDir, 'grok-forwarder.js');
+    fs.writeFileSync(forwarderFile, '// forwarder stub', 'utf-8');
     adapter = createGrokIntegration({
       homeDir: tempDir,
-      forwarderPath: '/fake/grok-forwarder.js',
+      forwarderPath: forwarderFile,
       debugLog: jest.fn(),
     });
   });
