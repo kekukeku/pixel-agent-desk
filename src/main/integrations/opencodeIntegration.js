@@ -1,47 +1,83 @@
 /**
- * OpenWork / OpenCode Integration (stub)
+ * OpenWork / OpenCode Integration
  * Signal source: OpenCode plugin lifecycle events
  * Setup mode: opencode-plugin
+ *
+ * Uses Phase 3 registration helpers (registerOpenCodePlugin,
+ * isOpenCodePluginRegistered) for detect and ensure, so the
+ * capability report reflects the real installed/integrated state.
  */
 
 'use strict';
 
-let started = false;
-let healthError = null;
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const {
+  registerOpenCodePlugin,
+  isOpenCodePluginRegistered,
+} = require('../opencodePluginRegistration');
 
-function detectInstalled() {
-  return false;
+function createOpenCodeIntegration(options) {
+  const opts = options || {};
+  const homeDir = opts.homeDir || os.homedir();
+  const sourcePath = opts.sourcePath || path.join(__dirname, '..', '..', 'adapters', 'opencode-plugin.js');
+  const debugLog = opts.debugLog || (() => {});
+  const opencodeConfigDir = path.join(homeDir, '.config', 'opencode');
+
+  function detectInstalled() {
+    try {
+      return fs.existsSync(opencodeConfigDir);
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function detectIntegrated() {
+    try {
+      return isOpenCodePluginRegistered({ homeDir });
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function ensureIntegration() {
+    try {
+      const ok = registerOpenCodePlugin(debugLog, { homeDir, sourcePath });
+      if (ok) {
+        return { status: 'installed' };
+      }
+      return { status: 'failed', message: 'plugin registration returned false' };
+    } catch (e) {
+      return { status: 'failed', message: e.message };
+    }
+  }
+
+  function start() {
+    return { status: 'skipped', message: 'opencode start not yet implemented' };
+  }
+
+  function stop() {
+    return { status: 'skipped', message: 'opencode stop not yet implemented' };
+  }
+
+  function getHealth() {
+    return { active: false, lastEventAt: null, error: null };
+  }
+
+  return {
+    id: 'opencode',
+    label: 'OpenWork / OpenCode',
+    setupMode: 'opencode-plugin',
+    detectInstalled,
+    detectIntegrated,
+    ensureIntegration,
+    start,
+    stop,
+    getHealth,
+  };
 }
 
-function detectIntegrated() {
-  return false;
-}
+module.exports = createOpenCodeIntegration();
 
-function ensureIntegration() {
-  return { status: 'planned', message: 'opencode integration not yet implemented' };
-}
-
-function start() {
-  return { status: 'skipped', message: 'opencode start not yet implemented' };
-}
-
-function stop() {
-  started = false;
-  return { status: 'skipped', message: 'opencode stop not yet implemented' };
-}
-
-function getHealth() {
-  return { active: started, lastEventAt: null, error: healthError };
-}
-
-module.exports = {
-  id: 'opencode',
-  label: 'OpenWork / OpenCode',
-  setupMode: 'opencode-plugin',
-  detectInstalled,
-  detectIntegrated,
-  ensureIntegration,
-  start,
-  stop,
-  getHealth
-};
+module.exports.createOpenCodeIntegration = createOpenCodeIntegration;
