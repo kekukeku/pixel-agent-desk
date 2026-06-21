@@ -69,29 +69,30 @@ function createCodexObserver(options) {
     }
   }
 
+  function walkDir(dir) {
+    const results = [];
+    try {
+      const entries = fs.readdirSync(dir, { withFileTypes: true });
+      for (const entry of entries) {
+        const fullPath = path.join(dir, entry.name);
+        if (entry.isDirectory()) {
+          for (const sub of walkDir(fullPath)) {
+            results.push(sub);
+          }
+        } else if (entry.isFile() && entry.name.endsWith('.jsonl')) {
+          results.push(fullPath);
+        }
+      }
+    } catch (e) {
+      // skip unreadable dirs
+    }
+    return results;
+  }
+
   function findSessionJsonls() {
     try {
       if (!fs.existsSync(sessionsDir)) return [];
-
-      const entries = fs.readdirSync(sessionsDir, { withFileTypes: true });
-      const files = [];
-
-      for (const entry of entries) {
-        if (!entry.isDirectory()) continue;
-        const sessionDir = path.join(sessionsDir, entry.name);
-        try {
-          const dirFiles = fs.readdirSync(sessionDir);
-          for (const f of dirFiles) {
-            if (f.endsWith('.jsonl')) {
-              files.push(path.join(sessionDir, f));
-            }
-          }
-        } catch (e) {
-          // skip unreadable dirs
-        }
-      }
-
-      return files;
+      return walkDir(sessionsDir);
     } catch (e) {
       debugLog(`[CodexObserver] Failed to scan sessions: ${e.message}`);
       return [];

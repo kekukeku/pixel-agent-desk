@@ -49,6 +49,14 @@ describe('codexObserver', () => {
     fs.writeFileSync(path.join(procDir, 'chat_processes.json'), JSON.stringify(content), 'utf-8');
   }
 
+  function writeNestedSession(relativePath, content) {
+    // e.g. relativePath = "2026/06/21/session.jsonl"
+    const filePath = path.join(sessionsDir, relativePath);
+    const dir = path.dirname(filePath);
+    fs.mkdirSync(dir, { recursive: true });
+    fs.writeFileSync(filePath, content, 'utf-8');
+  }
+
   function recordEvent(event) {
     events.push(event);
   }
@@ -66,6 +74,22 @@ describe('codexObserver', () => {
   }
 
   describe('session detection and event emission', () => {
+    test('finds JSONL files in nested year/month/day directories', () => {
+      writeNestedSession('2026/06/21/session.jsonl', [
+        '{"type":"session_meta","session_id":"nested-s1","cwd":"/projects/nested","thread_name":"Nested Session"}',
+      ].join('\n'));
+
+      const obs = createObs();
+      obs.start();
+
+      const started = events.find(function (e) { return e.event === 'agent.started'; });
+      expect(started).toBeTruthy();
+      expect(started.agent_id).toBe('nested-s1');
+      expect(started.name).toBe('Nested Session');
+
+      obs.stop();
+    });
+
     test('reads new session_meta and emits agent.started', () => {
       writeSession('s1', 'events.jsonl', [
         '{"type":"session_meta","session_id":"s1","cwd":"/projects/app","thread_name":"My App"}',
