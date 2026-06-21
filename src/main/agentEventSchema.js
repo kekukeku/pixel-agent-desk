@@ -1,5 +1,12 @@
 /**
  * JSON Schema for Normalized Agent Events
+ *
+ * Known source values (not enforced, kept as string for extension):
+ *   claude-code   Claude Code CLI via legacy /hook
+ *   codex         Codex via session JSONL observer
+ *   grok-build    Grok Build via command-hook forwarder
+ *   antigravity   Antigravity via command-hook forwarder
+ *   opencode      OpenWork / OpenCode via plugin
  */
 
 'use strict';
@@ -22,7 +29,7 @@ const agentEventSchema = {
       ]
     },
     agent_id: { type: 'string' },
-    session_id: { type: 'string' }, // alias support
+    session_id: { type: 'string' }, // alias support: payload may use session_id instead of agent_id
     source: { type: 'string' },
     name: { type: 'string' },
     project_path: { type: 'string' },

@@ -16,6 +16,35 @@ let detectClaudePidByTranscript = () => {};
 
 const pendingSessionStarts = [];
 
+const lastRawTokenUsage = new Map();
+
+function snapshotKey(source, agentId) {
+  return `${source}::${agentId}`;
+}
+
+function computeSnapshotDelta(source, agentId, rawTokenUsage) {
+  const key = snapshotKey(source, agentId);
+  const prev = lastRawTokenUsage.get(key);
+
+  const input = rawTokenUsage.input_tokens || 0;
+  const cached = rawTokenUsage.cached_input_tokens || 0;
+  const output = rawTokenUsage.output_tokens || 0;
+
+  let delta = { input_tokens: 0, cached_input_tokens: 0, output_tokens: 0 };
+
+  if (prev) {
+    delta = {
+      input_tokens: Math.max(0, input - (prev.input_tokens || 0)),
+      cached_input_tokens: Math.max(0, cached - (prev.cached_input_tokens || 0)),
+      output_tokens: Math.max(0, output - (prev.output_tokens || 0))
+    };
+  }
+
+  lastRawTokenUsage.set(key, { input_tokens: input, cached_input_tokens: cached, output_tokens: output });
+
+  return delta;
+}
+
 function init(deps) {
   agentManager = deps.agentManager;
   sessionPids = deps.sessionPids;
@@ -193,6 +222,7 @@ function handleAgentStarted(data, updateChannel = 'processor') {
 function handleAgentRemoved(data) {
   const agentId = data.agent_id;
   if (sessionPids) sessionPids.delete(agentId);
+  lastRawTokenUsage.delete(snapshotKey(data.source, agentId));
   if (agentManager) {
     const agent = agentManager.getAgent(agentId);
     if (agent) {
@@ -207,9 +237,18 @@ function handleAgentThinking(data, updateChannel = 'processor') {
   const agent = agentManager.getAgent(agentId);
   if (agent) {
     let tokenUsage = agent.tokenUsage;
-    if (data.token_usage) {
+
+    const rawSnapshot = data.metadata?.raw_token_usage;
+    if (rawSnapshot) {
+      const delta = computeSnapshotDelta(data.source, agentId, rawSnapshot);
+      const hasDelta = delta.input_tokens > 0 || delta.cached_input_tokens > 0 || delta.output_tokens > 0;
+      if (hasDelta) {
+        tokenUsage = computeTokenUsage(agent, delta);
+      }
+    } else if (data.token_usage) {
       tokenUsage = computeTokenUsage(agent, data.token_usage);
     }
+
     const shouldResetFirstSeen = !!data.metadata?.reset_first_seen;
     agentManager.updateAgent({
       ...agent,
@@ -280,11 +319,13 @@ function flushPendingStarts() {
 
 function cleanup() {
   pendingSessionStarts.length = 0;
+  lastRawTokenUsage.clear();
 }
 
 module.exports = {
   init,
   processAgentEvent,
   flushPendingStarts,
-  cleanup
+  cleanup,
+  get lastRawTokenUsage() { return lastRawTokenUsage; }
 };

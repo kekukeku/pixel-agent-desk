@@ -166,6 +166,13 @@ function mapClaudeHookToAgentEvent(claudePayload) {
       };
       break;
 
+    case 'InstructionsLoaded':
+      normalizedEvent = {
+        ...basePayload,
+        event: 'agent.thinking'
+      };
+      break;
+
     default:
       break;
   }
