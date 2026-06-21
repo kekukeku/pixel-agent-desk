@@ -1,0 +1,173 @@
+/**
+ * Integration Manager
+ * Registers adapters, runs detection/ensure/start/stop, and produces capability reports.
+ *
+ * Single-adapter failure must not interrupt other adapters.
+ */
+
+'use strict';
+
+const adapters = new Map();
+
+let debugLog = () => {};
+
+function init(deps) {
+  debugLog = deps.debugLog || (() => {});
+}
+
+function registerAdapter(adapter) {
+  if (!adapter || typeof adapter !== 'object' || !adapter.id) {
+    debugLog(`[IntegrationManager] Invalid adapter rejected`);
+    return false;
+  }
+
+  const required = ['id', 'label', 'detectInstalled', 'detectIntegrated', 'ensureIntegration', 'start', 'stop', 'getHealth'];
+  for (const method of required) {
+    if (typeof adapter[method] !== 'function' && method !== 'id' && method !== 'label' && method !== 'setupMode') {
+      debugLog(`[IntegrationManager] Adapter "${adapter.id}" missing method: ${method}`);
+      return false;
+    }
+  }
+
+  adapters.set(adapter.id, adapter);
+  debugLog(`[IntegrationManager] Registered adapter: ${adapter.id} (${adapter.label})`);
+  return true;
+}
+
+function safeCall(adapterId, fn, fnName) {
+  try {
+    return fn();
+  } catch (e) {
+    debugLog(`[IntegrationManager] ${adapterId}.${fnName}() failed: ${e.message}`);
+    return null;
+  }
+}
+
+function detectAll() {
+  const results = [];
+  for (const [id, adapter] of adapters) {
+    const installed = safeCall(id, () => adapter.detectInstalled(), 'detectInstalled') || false;
+    const integrated = safeCall(id, () => adapter.detectIntegrated(), 'detectIntegrated') || false;
+    debugLog(`[IntegrationManager] ${id}: installed=${installed} integrated=${integrated}`);
+    results.push({ id, installed, integrated });
+  }
+  return results;
+}
+
+function ensureAll() {
+  const results = [];
+  for (const [id, adapter] of adapters) {
+    const result = safeCall(id, () => adapter.ensureIntegration(), 'ensureIntegration');
+    debugLog(`[IntegrationManager] ${id}: ensureIntegration → ${JSON.stringify(result)}`);
+    results.push({ id, result });
+  }
+  return results;
+}
+
+function startAll() {
+  const results = [];
+  for (const [id, adapter] of adapters) {
+    const result = safeCall(id, () => adapter.start(), 'start');
+    debugLog(`[IntegrationManager] ${id}: start → ${JSON.stringify(result)}`);
+    results.push({ id, result });
+  }
+  return results;
+}
+
+function stopAll() {
+  const results = [];
+  for (const [id, adapter] of adapters) {
+    const result = safeCall(id, () => adapter.stop(), 'stop');
+    debugLog(`[IntegrationManager] ${id}: stop → ${JSON.stringify(result)}`);
+    results.push({ id, result });
+  }
+  return results;
+}
+
+function getCapabilityReport() {
+  const report = [];
+  for (const [id, adapter] of adapters) {
+    let installed = false;
+    let integrated = false;
+    let active = false;
+    let error = null;
+    let health = null;
+
+    try {
+      installed = !!adapter.detectInstalled();
+    } catch (e) {
+      error = e.message;
+    }
+
+    try {
+      integrated = !!adapter.detectIntegrated();
+    } catch (e) {
+      if (!error) error = e.message;
+    }
+
+    try {
+      health = adapter.getHealth();
+      if (health && health.active !== undefined) {
+        active = !!health.active;
+      }
+      if (health && health.error) {
+        if (!error) error = health.error;
+      }
+    } catch (e) {
+      if (!error) error = e.message;
+    }
+
+    report.push({
+      source: adapter.id,
+      label: adapter.label,
+      installed,
+      integrated,
+      active,
+      setupMode: adapter.setupMode || 'process-fallback',
+      lastEventAt: (health && health.lastEventAt) || null,
+      error
+    });
+  }
+  return report;
+}
+
+function getRegisteredAdapters() {
+  return Array.from(adapters.keys());
+}
+
+function cleanup() {
+  adapters.clear();
+}
+
+function registerDefaultAdapters() {
+  const modules = [
+    require('./claudeIntegration'),
+    require('./codexIntegration'),
+    require('./grokIntegration'),
+    require('./antigravityIntegration'),
+    require('./opencodeIntegration')
+  ];
+
+  let count = 0;
+  for (const adapter of modules) {
+    if (registerAdapter(adapter)) {
+      count++;
+    }
+  }
+
+  debugLog(`[IntegrationManager] Registered ${count} / ${modules.length} default adapters`);
+  return count;
+}
+
+module.exports = {
+  init,
+  registerAdapter,
+  registerDefaultAdapters,
+  detectAll,
+  ensureAll,
+  startAll,
+  stopAll,
+  getCapabilityReport,
+  getRegisteredAdapters,
+  cleanup
+};
