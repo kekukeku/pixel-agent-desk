@@ -156,9 +156,21 @@ function registerDefaultAdapters(options) {
     return gf;
   })();
 
+  const codexAdapter = (function () {
+    const cf = require('./codexIntegration');
+    if (typeof cf.createCodexIntegration === 'function') {
+      return cf.createCodexIntegration({
+        debugLog: log,
+        processAgentEvent: opts.processAgentEvent || null,
+        homeDir: opts.homeDir || undefined,
+      });
+    }
+    return cf;
+  })();
+
   const allModules = [
     require('./claudeIntegration'),
-    require('./codexIntegration'),
+    codexAdapter,
     grokAdapter,
     require('./antigravityIntegration'),
     require('./opencodeIntegration')

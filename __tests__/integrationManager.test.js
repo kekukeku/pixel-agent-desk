@@ -422,7 +422,7 @@ describe('integrationManager', () => {
       });
     });
 
-    test('default adapters report active=false, no errors; installed/integrated are stub-except-opencode-grok', () => {
+    test('default adapters report active=false, no errors; installed/integrated are stub-except-opencode-grok-codex', () => {
       manager.registerDefaultAdapters();
       const report = manager.getCapabilityReport();
 
@@ -430,8 +430,8 @@ describe('integrationManager', () => {
         expect(entry.active).toBe(false);
         expect(entry.error).toBeNull();
 
-        // All stubs return installed/integrated=false; opencode and grok use real fs detection
-        if (entry.source !== 'opencode' && entry.source !== 'grok-build') {
+        // All stubs return installed/integrated=false; opencode/grok/codex use real fs detection
+        if (entry.source !== 'opencode' && entry.source !== 'grok-build' && entry.source !== 'codex') {
           expect(entry.installed).toBe(false);
           expect(entry.integrated).toBe(false);
         }
