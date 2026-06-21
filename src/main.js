@@ -178,7 +178,7 @@ app.whenReady().then(() => {
   // 6.5. Initialize integrations after the local event server is ready.
   integrationMgr = integrationManager;
   integrationMgr.init({ debugLog });
-  integrationMgr.registerDefaultAdapters({ appConfig, debugLog });
+  integrationMgr.registerDefaultAdapters({ appConfig, debugLog, processAgentEvent: hookProcessor.processAgentEvent });
   integrationMgr.detectAll();
   integrationMgr.ensureAll();
   integrationMgr.startAll();

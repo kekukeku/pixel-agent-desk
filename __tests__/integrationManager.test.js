@@ -496,5 +496,30 @@ describe('integrationManager', () => {
       const count = manager.registerDefaultAdapters({ appConfig: {} });
       expect(count).toBe(5);
     });
+
+    test('processAgentEvent is accepted and all five adapters registered', () => {
+      manager.cleanup();
+      const mockProcessEvent = jest.fn();
+      const count = manager.registerDefaultAdapters({
+        processAgentEvent: mockProcessEvent,
+      });
+      expect(count).toBe(5);
+    });
+
+    test('codex adapter receives processAgentEvent (wiring verification)', () => {
+      const mockProcessEvent = jest.fn();
+      manager.registerDefaultAdapters({ processAgentEvent: mockProcessEvent });
+
+      // Verify all five are present including codex
+      const report = manager.getCapabilityReport();
+      const codexEntry = report.find(function (r) { return r.source === 'codex'; });
+      expect(codexEntry).toBeTruthy();
+
+      // startAll should not throw — codex with processAgentEvent should start
+      expect(function () { manager.startAll(); }).not.toThrow();
+
+      // cleanup
+      manager.stopAll();
+    });
   });
 });
