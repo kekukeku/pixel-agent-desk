@@ -22,6 +22,7 @@ const { savePersistedState, recoverExistingSessions } = require('./main/sessionP
 const { createWindowManager } = require('./main/windowManager');
 const { registerIpcHandlers } = require('./main/ipcHandlers');
 const { getAppConfig } = require('./main/config');
+const integrationManager = require('./main/integrations/integrationManager');
 
 // =====================================================
 // Save error logs to file
@@ -85,6 +86,7 @@ let windowManager = null;
 let hookProcessor = null;
 let livenessIntervals = null;
 let agentListeners = null;
+let integrationMgr = null;
 
 app.whenReady().then(() => {
   debugLog('========== Pixel Agent Desk started ==========');
@@ -172,6 +174,16 @@ app.whenReady().then(() => {
     HOOK_SERVER_PORT,
     errorHandler,
   });
+
+  // 6.5. Initialize integrations after the local event server is ready.
+  integrationMgr = integrationManager;
+  integrationMgr.init({ debugLog });
+  integrationMgr.registerDefaultAdapters({ appConfig, debugLog });
+  integrationMgr.detectAll();
+  integrationMgr.ensureAll();
+  integrationMgr.startAll();
+  debugLog(`[Main] Integration capability: ${JSON.stringify(integrationMgr.getCapabilityReport())}`);
+
   windowManager.startDashboardServer();
   livenessIntervals = startLivenessChecker({ agentManager, debugLog });
 
@@ -299,6 +311,11 @@ app.on('before-quit', () => {
   }
 
   // Clean up all resources
+  if (integrationMgr) {
+    integrationMgr.stopAll();
+    integrationMgr.cleanup();
+    debugLog('[Main] Integration manager cleaned up');
+  }
   if (hookProcessor) hookProcessor.cleanup();
   sessionPids.clear();
 

@@ -422,15 +422,19 @@ describe('integrationManager', () => {
       });
     });
 
-    test('default adapters all report installed=false, integrated=false, active=false', () => {
+    test('default adapters report active=false, no errors; installed/integrated are stub-except-opencode', () => {
       manager.registerDefaultAdapters();
       const report = manager.getCapabilityReport();
 
       for (const entry of report) {
-        expect(entry.installed).toBe(false);
-        expect(entry.integrated).toBe(false);
         expect(entry.active).toBe(false);
         expect(entry.error).toBeNull();
+
+        // All stubs return installed/integrated=false; opencode uses real fs detection
+        if (entry.source !== 'opencode') {
+          expect(entry.installed).toBe(false);
+          expect(entry.integrated).toBe(false);
+        }
       }
     });
 
@@ -446,6 +450,51 @@ describe('integrationManager', () => {
         'grok-build',
         'opencode'
       ]);
+    });
+  });
+
+  describe('registerDefaultAdapters with config gate', () => {
+    test('no config still registers all five adapters', () => {
+      const count = manager.registerDefaultAdapters();
+      expect(count).toBe(5);
+      expect(manager.getRegisteredAdapters()).toHaveLength(5);
+    });
+
+    test('opencode disabled in config skips opencode adapter', () => {
+      manager.cleanup();
+      const count = manager.registerDefaultAdapters({
+        appConfig: { integrations: { opencode: { enabled: false } } }
+      });
+      expect(count).toBe(4);
+      expect(manager.getRegisteredAdapters()).not.toContain('opencode');
+      expect(manager.getRegisteredAdapters()).toContain('claude-code');
+      expect(manager.getRegisteredAdapters()).toContain('codex');
+      expect(manager.getRegisteredAdapters()).toContain('grok-build');
+      expect(manager.getRegisteredAdapters()).toContain('antigravity');
+    });
+
+    test('opencode enabled in config registers all five', () => {
+      manager.cleanup();
+      const count = manager.registerDefaultAdapters({
+        appConfig: { integrations: { opencode: { enabled: true } } }
+      });
+      expect(count).toBe(5);
+      expect(manager.getRegisteredAdapters()).toContain('opencode');
+    });
+
+    test('non-opencode config keys do not affect registration', () => {
+      manager.cleanup();
+      const count = manager.registerDefaultAdapters({
+        appConfig: { integrations: { claude: { enabled: false } } }
+      });
+      // claude not gated yet, so all five still register
+      expect(count).toBe(5);
+    });
+
+    test('empty appConfig registers all five', () => {
+      manager.cleanup();
+      const count = manager.registerDefaultAdapters({ appConfig: {} });
+      expect(count).toBe(5);
     });
   });
 });

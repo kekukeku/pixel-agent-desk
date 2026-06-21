@@ -139,14 +139,26 @@ function cleanup() {
   adapters.clear();
 }
 
-function registerDefaultAdapters() {
-  const modules = [
+function registerDefaultAdapters(options) {
+  const opts = options || {};
+  const appConfig = opts.appConfig || {};
+  const log = opts.debugLog || debugLog;
+
+  const allModules = [
     require('./claudeIntegration'),
     require('./codexIntegration'),
     require('./grokIntegration'),
     require('./antigravityIntegration'),
     require('./opencodeIntegration')
   ];
+
+  const modules = allModules.filter(function (adapter) {
+    if (adapter.id === 'opencode' && appConfig.integrations && appConfig.integrations.opencode && appConfig.integrations.opencode.enabled === false) {
+      log(`[IntegrationManager] Skipping ${adapter.id} (disabled in config)`);
+      return false;
+    }
+    return true;
+  });
 
   let count = 0;
   for (const adapter of modules) {
@@ -155,7 +167,7 @@ function registerDefaultAdapters() {
     }
   }
 
-  debugLog(`[IntegrationManager] Registered ${count} / ${modules.length} default adapters`);
+  log(`[IntegrationManager] Registered ${count} / ${modules.length} default adapters`);
   return count;
 }
 
