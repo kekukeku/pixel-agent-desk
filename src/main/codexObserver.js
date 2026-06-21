@@ -261,7 +261,6 @@ function createCodexObserver(options) {
           for (const proc of processes) {
             const sid = proc.session_id;
             const ts = proc.updatedAtMs || proc.startedAtMs || Date.now();
-            if (!replayExisting && initialScan && ts < observerStartedAt) continue;
 
             // Build a stable dedupe key without Date.now() for absent timestamps
             const dedupeKey = [
@@ -272,6 +271,7 @@ function createCodexObserver(options) {
             ].join('::');
             if (chatProcessSeen.has(dedupeKey)) continue;
             chatProcessSeen.set(dedupeKey, true);
+            if (!replayExisting && initialScan && ts < observerStartedAt) continue;
 
             // Resolve name/project_path: session meta → session index → proc.chatTitle/cwd
             const meta = sessionMetaMap.get(sid);

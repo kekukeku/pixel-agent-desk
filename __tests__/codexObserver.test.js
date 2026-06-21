@@ -189,6 +189,33 @@ describe('codexObserver', () => {
       obs.stop();
     });
 
+    test('replayExisting false does not emit old chat_processes on later polls', () => {
+      writeGlobalState({
+        'active-workspace-roots': ['/projects/current-codex'],
+      });
+      writeChatProcesses([{
+        conversationId: 'old-draw-things',
+        command: "open 'macappstore://itunes.apple.com/app/id497799835'",
+        cwd: '/projects/Draw Things',
+        updatedAtMs: Date.now() - 86400000,
+      }]);
+
+      const obs = createObs({ replayExisting: false, pollIntervalMs: 200 });
+      obs.start();
+
+      expect(events.some(function (e) {
+        return e.agent_id === 'old-draw-things';
+      })).toBe(false);
+
+      jest.advanceTimersByTime(500);
+
+      expect(events.some(function (e) {
+        return e.agent_id === 'old-draw-things';
+      })).toBe(false);
+
+      obs.stop();
+    });
+
     test('reads new session_meta and emits agent.started', () => {
       writeSession('s1', 'events.jsonl', [
         '{"type":"session_meta","session_id":"s1","cwd":"/projects/app","thread_name":"My App"}',
