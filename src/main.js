@@ -14,7 +14,7 @@ const { adaptAgentToDashboard } = require('./dashboardAdapter');
 const errorHandler = require('./errorHandler');
 const { getWindowSizeForAgents } = require('./utils');
 
-const { HOOK_SERVER_PORT, registerClaudeHooks } = require('./main/hookRegistration');
+const { HOOK_SERVER_PORT } = require('./main/hookRegistration');
 const { startHookServer } = require('./main/hookServer');
 const { createHookProcessor } = require('./main/hookProcessor');
 const { sessionPids, startLivenessChecker, detectClaudePidByTranscript } = require('./main/livenessChecker');
@@ -119,11 +119,6 @@ app.whenReady().then(() => {
 
   const appConfig = getAppConfig();
   const isClaudeEnabled = appConfig.integrations?.claude?.enabled !== false;
-
-  // 0. Auto-register Claude CLI hooks (if integration is enabled)
-  if (isClaudeEnabled) {
-    registerClaudeHooks(debugLog);
-  }
 
   // 1. Start agent manager immediately
   agentManager = new AgentManager();

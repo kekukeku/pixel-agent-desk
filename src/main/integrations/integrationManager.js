@@ -144,6 +144,17 @@ function registerDefaultAdapters(options) {
   const appConfig = opts.appConfig || {};
   const log = opts.debugLog || debugLog;
 
+  const claudeAdapter = (function () {
+    const cf = require('./claudeIntegration');
+    if (typeof cf.createClaudeIntegration === 'function') {
+      return cf.createClaudeIntegration({
+        debugLog: log,
+        homeDir: opts.homeDir || undefined,
+      });
+    }
+    return cf;
+  })();
+
   const grokAdapter = (function () {
     const gf = require('./grokIntegration');
     if (typeof gf.createGrokIntegration === 'function') {
@@ -181,7 +192,7 @@ function registerDefaultAdapters(options) {
   })();
 
   const allModules = [
-    require('./claudeIntegration'),
+    claudeAdapter,
     codexAdapter,
     grokAdapter,
     antigravityAdapter,
@@ -189,6 +200,10 @@ function registerDefaultAdapters(options) {
   ];
 
   const modules = allModules.filter(function (adapter) {
+    if (adapter.id === 'claude-code' && appConfig.integrations && appConfig.integrations.claude && appConfig.integrations.claude.enabled === false) {
+      log(`[IntegrationManager] Skipping ${adapter.id} (disabled in config)`);
+      return false;
+    }
     if (adapter.id === 'opencode' && appConfig.integrations && appConfig.integrations.opencode && appConfig.integrations.opencode.enabled === false) {
       log(`[IntegrationManager] Skipping ${adapter.id} (disabled in config)`);
       return false;

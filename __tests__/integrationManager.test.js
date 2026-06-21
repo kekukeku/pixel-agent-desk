@@ -422,19 +422,13 @@ describe('integrationManager', () => {
       });
     });
 
-    test('default adapters report active=false, no errors; installed/integrated are stub-except-opencode-grok-codex-antigravity', () => {
+    test('default adapters report active=false, no errors; installed/integrated are adapter-defined', () => {
       manager.registerDefaultAdapters();
       const report = manager.getCapabilityReport();
 
       for (const entry of report) {
         expect(entry.active).toBe(false);
         expect(entry.error).toBeNull();
-
-        // All stubs return installed/integrated=false; opencode/grok/codex/antigravity use real fs detection
-        if (entry.source !== 'opencode' && entry.source !== 'grok-build' && entry.source !== 'codex' && entry.source !== 'antigravity') {
-          expect(entry.installed).toBe(false);
-          expect(entry.integrated).toBe(false);
-        }
       }
     });
 
@@ -482,13 +476,35 @@ describe('integrationManager', () => {
       expect(manager.getRegisteredAdapters()).toContain('opencode');
     });
 
-    test('non-opencode config keys do not affect registration', () => {
+    test('claude disabled in config skips claude adapter', () => {
       manager.cleanup();
       const count = manager.registerDefaultAdapters({
         appConfig: { integrations: { claude: { enabled: false } } }
       });
-      // claude not gated yet, so all five still register
-      expect(count).toBe(5);
+      expect(count).toBe(4);
+      expect(manager.getRegisteredAdapters()).not.toContain('claude-code');
+      expect(manager.getRegisteredAdapters()).toContain('opencode');
+      expect(manager.getRegisteredAdapters()).toContain('codex');
+      expect(manager.getRegisteredAdapters()).toContain('grok-build');
+      expect(manager.getRegisteredAdapters()).toContain('antigravity');
+    });
+
+    test('claude and opencode disabled in config skips both adapters', () => {
+      manager.cleanup();
+      const count = manager.registerDefaultAdapters({
+        appConfig: {
+          integrations: {
+            claude: { enabled: false },
+            opencode: { enabled: false },
+          },
+        },
+      });
+      expect(count).toBe(3);
+      expect(manager.getRegisteredAdapters()).toEqual([
+        'codex',
+        'grok-build',
+        'antigravity',
+      ]);
     });
 
     test('empty appConfig registers all five', () => {

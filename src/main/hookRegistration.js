@@ -9,13 +9,14 @@ const fs = require('fs');
 
 const HOOK_SERVER_PORT = 47821;
 
-function getClaudeConfigPath() {
-  return path.join(os.homedir(), '.claude', 'settings.json');
+function getClaudeConfigPath(options) {
+  const opts = options || {};
+  return path.join(opts.homeDir || os.homedir(), '.claude', 'settings.json');
 }
 
-function readClaudeConfig(debugLog) {
+function readClaudeConfig(debugLog, options) {
   try {
-    const configPath = getClaudeConfigPath();
+    const configPath = getClaudeConfigPath(options);
     if (fs.existsSync(configPath)) {
       const content = fs.readFileSync(configPath, 'utf-8');
       return JSON.parse(content);
@@ -26,9 +27,9 @@ function readClaudeConfig(debugLog) {
   return {};
 }
 
-function writeClaudeConfig(config, debugLog) {
+function writeClaudeConfig(config, debugLog, options) {
   try {
-    const configPath = getClaudeConfigPath();
+    const configPath = getClaudeConfigPath(options);
     const dir = path.dirname(configPath);
     if (!fs.existsSync(dir)) {
       fs.mkdirSync(dir, { recursive: true });
@@ -55,8 +56,8 @@ function hasOurHookInEntry(entry, hookUrl) {
   return entry.hooks && entry.hooks.some(h => h.type === 'http' && h.url === hookUrl);
 }
 
-function isHookRegistered(debugLog) {
-  const config = readClaudeConfig(debugLog);
+function isHookRegistered(debugLog, options) {
+  const config = readClaudeConfig(debugLog, options);
   const HTTP_HOOK_URL = `http://localhost:${HOOK_SERVER_PORT}/hook`;
 
   if (!config.hooks) {
@@ -72,17 +73,17 @@ function isHookRegistered(debugLog) {
   );
 }
 
-function registerClaudeHooks(debugLog) {
+function registerClaudeHooks(debugLog, options) {
   debugLog('[Hook] Checking Claude CLI hook registration status...');
 
-  if (isHookRegistered(debugLog)) {
+  if (isHookRegistered(debugLog, options)) {
     debugLog('[Hook] Hooks are already registered.');
     return true;
   }
 
   debugLog('[Hook] Starting hook registration...');
 
-  const config = readClaudeConfig(debugLog);
+  const config = readClaudeConfig(debugLog, options);
 
   config.hooks = config.hooks || {};
 
@@ -105,7 +106,7 @@ function registerClaudeHooks(debugLog) {
     // Already registered — leave it untouched
   }
 
-  if (writeClaudeConfig(config, debugLog)) {
+  if (writeClaudeConfig(config, debugLog, options)) {
     debugLog('[Hook] Claude CLI hook registration complete');
     return true;
   }
@@ -114,4 +115,10 @@ function registerClaudeHooks(debugLog) {
   return false;
 }
 
-module.exports = { HOOK_SERVER_PORT, registerClaudeHooks };
+module.exports = {
+  HOOK_SERVER_PORT,
+  HOOK_EVENTS,
+  getClaudeConfigPath,
+  isHookRegistered,
+  registerClaudeHooks,
+};
