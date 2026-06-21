@@ -196,4 +196,139 @@ describe('codexObserver', () => {
       expect(obs.getHealth().lastEventAt).toBeNull();
     });
   });
+
+  describe('incremental poll preserves metadata', () => {
+    test('session_meta from first poll is used by function_call in second poll', () => {
+      // Round 1: only session_meta
+      writeSession('s1', 'events.jsonl', [
+        '{"type":"session_meta","session_id":"s1","cwd":"/projects/app","thread_name":"Meta Thread"}',
+      ].join('\n'));
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const started = events.find(function (e) { return e.event === 'agent.started'; });
+      expect(started).toBeTruthy();
+      expect(started.name).toBe('Meta Thread');
+      expect(started.project_path).toBe('/projects/app');
+
+      // Round 2: append function_call (no session_meta this time)
+      const filePath = path.join(sessionsDir, 's1', 'events.jsonl');
+      const existing = fs.readFileSync(filePath, 'utf-8');
+      fs.writeFileSync(filePath, existing + '\n' + JSON.stringify({
+        type: 'function_call',
+        session_id: 's1',
+        function_name: 'Bash',
+      }), 'utf-8');
+
+      events.length = 0; // 清空上一輪事件
+      jest.advanceTimersByTime(300);
+
+      const working = events.find(function (e) { return e.event === 'agent.working'; });
+      expect(working).toBeTruthy();
+      expect(working.tool).toBe('Bash');
+      expect(working.name).toBe('Meta Thread');   // from persistent sessionMetaMap
+      expect(working.project_path).toBe('/projects/app');
+
+      obs.stop();
+    });
+  });
+
+  describe('idle dedupe', () => {
+    test('emits idle only once per quiet period', () => {
+      writeSession('s1', 'events.jsonl', [
+        '{"type":"session_meta","session_id":"s1","cwd":"/app"}',
+        '{"type":"function_call","session_id":"s1","function_name":"Bash"}',
+      ].join('\n'));
+
+      const obs = createObs({ pollIntervalMs: 200, quietMs: 500, staleMs: 10000 });
+      obs.start();
+
+      // Clear initial events
+      events.length = 0;
+
+      // Advance past quietMs → should emit exactly 1 idle
+      jest.advanceTimersByTime(800);
+
+      const idleEvents = events.filter(function (e) { return e.event === 'agent.idle'; });
+      expect(idleEvents.length).toBe(1);
+
+      // Further advance without new activity → no more idle events
+      events.length = 0;
+      jest.advanceTimersByTime(2000);
+
+      const moreIdle = events.filter(function (e) { return e.event === 'agent.idle'; });
+      expect(moreIdle.length).toBe(0);
+
+      obs.stop();
+    });
+
+    test('idle dedupe resets when new working event arrives', () => {
+      writeSession('s1', 'events.jsonl', [
+        '{"type":"session_meta","session_id":"s1","cwd":"/app"}',
+        '{"type":"function_call","session_id":"s1","function_name":"Bash"}',
+      ].join('\n'));
+
+      const obs = createObs({ pollIntervalMs: 200, quietMs: 500, staleMs: 10000 });
+      obs.start();
+
+      events.length = 0;
+      jest.advanceTimersByTime(800);
+      expect(events.filter(function (e) { return e.event === 'agent.idle'; }).length).toBe(1);
+
+      // Append new working event
+      const filePath = path.join(sessionsDir, 's1', 'events.jsonl');
+      fs.appendFileSync(filePath, '\n' + JSON.stringify({
+        type: 'function_call',
+        session_id: 's1',
+        function_name: 'Read',
+      }), 'utf-8');
+
+      events.length = 0;
+      jest.advanceTimersByTime(300);
+
+      // Should have a new agent.working from the appended line
+      expect(events.some(function (e) { return e.event === 'agent.working'; })).toBe(true);
+
+      // Now wait for quiet again → should emit a new idle
+      events.length = 0;
+      jest.advanceTimersByTime(800);
+
+      expect(events.filter(function (e) { return e.event === 'agent.idle'; }).length).toBe(1);
+
+      obs.stop();
+    });
+  });
+
+  describe('stale timeout', () => {
+    test('emits agent.removed after staleMs and stops idle', () => {
+      writeSession('s1', 'events.jsonl', [
+        '{"type":"session_meta","session_id":"s1","cwd":"/app"}',
+      ].join('\n'));
+
+      const obs = createObs({ pollIntervalMs: 200, quietMs: 500, staleMs: 2000 });
+      obs.start();
+
+      events.length = 0;
+
+      // Advance past quiet → idle first
+      jest.advanceTimersByTime(800);
+      expect(events.some(function (e) { return e.event === 'agent.idle'; })).toBe(true);
+
+      // Advance past stale → removed
+      events.length = 0;
+      jest.advanceTimersByTime(2000);
+
+      const removed = events.find(function (e) { return e.event === 'agent.removed'; });
+      expect(removed).toBeTruthy();
+      expect(removed.agent_id).toBe('s1');
+
+      // After removal, no more idle or removed for this session
+      events.length = 0;
+      jest.advanceTimersByTime(1000);
+      expect(events.filter(function (e) { return e.agent_id === 's1'; }).length).toBe(0);
+
+      obs.stop();
+    });
+  });
 });

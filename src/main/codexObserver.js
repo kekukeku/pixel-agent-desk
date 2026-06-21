@@ -43,8 +43,14 @@ function createCodexObserver(options) {
   // 記錄每個 session 最後一次活動時間
   const sessionActivity = new Map();
 
+  // 記錄 session 是否已處於 idle（防止重複 emit）
+  const sessionIdle = new Map();
+
   // sessionIndex cache
   let sessionIndex = new Map();
+
+  // session metadata cache（跨 poll 保留，避免增量輪次遺失 cwd/model）
+  const sessionMetaMap = new Map();
 
   function loadSessionIndex() {
     try {
@@ -138,19 +144,23 @@ function createCodexObserver(options) {
         const sessionDirName = path.basename(path.dirname(filePath));
         const records = readNewLines(filePath, sessionDirName);
 
-        const sessionMetaMap = new Map();
-
         for (const record of records) {
           const sid = record.session_id || record.sessionId || sessionDirName;
           const agentEvent = mapCodexRecordToAgentEvent(record, {
             sessionIndex,
-            sessionMetaMap,
+            sessionMetaMap,  // persistent: survives across poll cycles
           });
 
           if (agentEvent) {
             processAgentEvent(agentEvent);
             lastEventAt = Date.now();
             sessionActivity.set(sid, lastEventAt);
+
+            // Any new working/thinking event clears the idle flag so
+            // a subsequent quiet period can re-emit idle once.
+            if (agentEvent.event === 'agent.working' || agentEvent.event === 'agent.thinking') {
+              sessionIdle.delete(sid);
+            }
           }
         }
       }
@@ -167,7 +177,9 @@ function createCodexObserver(options) {
             timestamp: now,
           });
           sessionActivity.delete(sid);
-        } else if (elapsed >= quietMs) {
+          sessionIdle.delete(sid);
+        } else if (elapsed >= quietMs && !sessionIdle.has(sid)) {
+          sessionIdle.set(sid, true);
           processAgentEvent({
             event: 'agent.idle',
             agent_id: sid,
@@ -186,6 +198,8 @@ function createCodexObserver(options) {
     running = true;
     lastEventAt = null;
     sessionActivity.clear();
+    sessionIdle.clear();
+    sessionMetaMap.clear();
 
     // Initial scan immediately
     scan();
@@ -203,6 +217,8 @@ function createCodexObserver(options) {
     }
     sessionOffsets.clear();
     sessionActivity.clear();
+    sessionIdle.clear();
+    sessionMetaMap.clear();
     sessionIndex.clear();
     debugLog('[CodexObserver] Stopped');
     return { status: 'stopped' };
