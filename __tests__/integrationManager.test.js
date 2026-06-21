@@ -139,6 +139,65 @@ describe('integrationManager', () => {
     });
   });
 
+  describe('ensureInstallableAdapters', () => {
+    test('only ensures Claude and OpenCode adapters', () => {
+      const ensureClaude = jest.fn().mockReturnValue({ status: 'installed' });
+      const ensureOpenCode = jest.fn().mockReturnValue({ status: 'installed' });
+      const ensureGrok = jest.fn().mockReturnValue({ status: 'installed' });
+
+      manager.registerAdapter(createFakeAdapter({ id: 'claude-code', ensureIntegration: ensureClaude }));
+      manager.registerAdapter(createFakeAdapter({ id: 'opencode', ensureIntegration: ensureOpenCode }));
+      manager.registerAdapter(createFakeAdapter({ id: 'grok-build', ensureIntegration: ensureGrok }));
+
+      const results = manager.ensureInstallableAdapters();
+
+      expect(results).toEqual([
+        { id: 'claude-code', status: 'installed', message: null },
+        { id: 'opencode', status: 'installed', message: null }
+      ]);
+      expect(ensureClaude).toHaveBeenCalledTimes(1);
+      expect(ensureOpenCode).toHaveBeenCalledTimes(1);
+      expect(ensureGrok).not.toHaveBeenCalled();
+    });
+
+    test('returns failed when an installable adapter throws', () => {
+      manager.registerAdapter(createFakeAdapter({
+        id: 'claude-code',
+        ensureIntegration: () => { throw new Error('write denied'); }
+      }));
+
+      const results = manager.ensureInstallableAdapters();
+
+      expect(results).toEqual([
+        { id: 'claude-code', status: 'failed', message: 'ensureIntegration failed' }
+      ]);
+    });
+
+    test('respects install-time config gates', () => {
+      const ensureClaude = jest.fn().mockReturnValue({ status: 'installed' });
+      const ensureOpenCode = jest.fn().mockReturnValue({ status: 'installed' });
+
+      manager.registerAdapter(createFakeAdapter({ id: 'claude-code', ensureIntegration: ensureClaude }));
+      manager.registerAdapter(createFakeAdapter({ id: 'opencode', ensureIntegration: ensureOpenCode }));
+
+      const results = manager.ensureInstallableAdapters({
+        appConfig: {
+          integrations: {
+            claude: { enabled: false },
+            opencode: { enabled: false }
+          }
+        }
+      });
+
+      expect(results).toEqual([
+        { id: 'claude-code', status: 'skipped', reason: 'disabled' },
+        { id: 'opencode', status: 'skipped', reason: 'disabled' }
+      ]);
+      expect(ensureClaude).not.toHaveBeenCalled();
+      expect(ensureOpenCode).not.toHaveBeenCalled();
+    });
+  });
+
   describe('startAll', () => {
     test('calls start on all adapters', () => {
       const start = jest.fn().mockReturnValue({ status: 'started' });

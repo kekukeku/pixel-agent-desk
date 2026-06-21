@@ -1,44 +1,51 @@
 /**
- * Pixel Agent Desk - Auto Installation Script
+ * Pixel Agent Desk — Install Script
  *
- * Automatically registers HTTP hooks in the Claude CLI config.
- * Runs automatically during npm install.
+ * Thin wrapper around the integration manager.
+ * Ensures installable adapters (Claude Code, OpenCode) are registered
+ * in the user's home config at install time.
  *
- * Delegates actual registration logic to hookRegistration.js.
+ * Does NOT start observers, forwarders, or Codex integration.
  */
 
-const { registerClaudeHooks } = require('./main/hookRegistration');
+'use strict';
+
+const integrationManager = require('./main/integrations/integrationManager');
 const { getAppConfig } = require('./main/config');
 
-/**
- * Main entry point
- */
-function main() {
-  console.log('=================================');
-  console.log('Pixel Agent Desk - Install Script');
-  console.log('=================================\n');
+function runInstall(options) {
+  const opts = options || {};
+  const homeDir = opts.homeDir || null;
+  const sourcePath = opts.sourcePath || null;
+  const debugLog = opts.debugLog || (function () {});
+  const appConfig = opts.appConfig || getAppConfig();
 
-  const appConfig = getAppConfig();
-  if (appConfig.integrations?.claude?.enabled === false) {
-    console.log('Claude integration is disabled in config.json. Skipping auto-registration of Claude hooks.');
-    return;
-  }
+  integrationManager.init({ debugLog });
 
-  const debugLog = (msg) => console.log(msg);
-  const success = registerClaudeHooks(debugLog);
+  integrationManager.registerDefaultAdapters({
+    appConfig,
+    debugLog,
+    homeDir,
+    sourcePath,
+  });
 
-  if (success) {
-    console.log('\n=================================');
-    console.log('Installation complete!');
-    console.log('=================================\n');
-    console.log('Run the app with:');
-    console.log('  npm start\n');
-  } else {
-    console.log('\n⚠️  Hook registration failed.');
-    console.log('Please manually edit ~/.claude/settings.json.');
-    process.exit(1);
-  }
+  const results = integrationManager.ensureInstallableAdapters({
+    appConfig,
+    debugLog,
+    homeDir,
+  });
+
+  const ok = results.every(function (r) { return r.status !== 'failed'; });
+
+  integrationManager.cleanup();
+
+  return { ok, results };
 }
 
-// Run
-main();
+// CLI entry point — only when run directly (not required())
+if (require.main === module) {
+  const result = runInstall();
+  if (!result.ok) process.exit(1);
+}
+
+module.exports = { runInstall };

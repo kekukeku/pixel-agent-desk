@@ -191,12 +191,24 @@ function registerDefaultAdapters(options) {
     return af;
   })();
 
+  const opencodeAdapter = (function () {
+    const of = require('./opencodeIntegration');
+    if (typeof of.createOpenCodeIntegration === 'function') {
+      return of.createOpenCodeIntegration({
+        debugLog: log,
+        sourcePath: opts.sourcePath || null,
+        homeDir: opts.homeDir || undefined,
+      });
+    }
+    return of;
+  })();
+
   const allModules = [
     claudeAdapter,
     codexAdapter,
     grokAdapter,
     antigravityAdapter,
-    require('./opencodeIntegration')
+    opencodeAdapter
   ];
 
   const modules = allModules.filter(function (adapter) {
@@ -222,10 +234,55 @@ function registerDefaultAdapters(options) {
   return count;
 }
 
+function ensureInstallableAdapters(options) {
+  const opts = options || {};
+  const appConfig = opts.appConfig || {};
+  const log = opts.debugLog || debugLog;
+
+  // Only claude-code and opencode are installable (write to home config).
+  // Grok and Antigravity command-hooks are deferred to app startup.
+  const installableIds = ['claude-code', 'opencode'];
+
+  const results = [];
+
+  for (const id of installableIds) {
+    const adapter = adapters.get(id);
+    if (!adapter) {
+      log(`[IntegrationManager] ${id}: adapter not registered, skipping`);
+      continue;
+    }
+
+    if (id === 'claude-code' && appConfig.integrations && appConfig.integrations.claude && appConfig.integrations.claude.enabled === false) {
+      log(`[IntegrationManager] ${id}: disabled in config, skipping`);
+      results.push({ id, status: 'skipped', reason: 'disabled' });
+      continue;
+    }
+    if (id === 'opencode' && appConfig.integrations && appConfig.integrations.opencode && appConfig.integrations.opencode.enabled === false) {
+      log(`[IntegrationManager] ${id}: disabled in config, skipping`);
+      results.push({ id, status: 'skipped', reason: 'disabled' });
+      continue;
+    }
+
+    const result = safeCall(id, () => adapter.ensureIntegration(), 'ensureIntegration');
+    log(`[IntegrationManager] ${id}: ensureIntegration → ${JSON.stringify(result)}`);
+
+    if (!result) {
+      results.push({ id, status: 'failed', message: 'ensureIntegration failed' });
+      continue;
+    }
+
+    const status = (result && result.status) ? result.status : 'unknown';
+    results.push({ id, status, message: result.message || null });
+  }
+
+  return results;
+}
+
 module.exports = {
   init,
   registerAdapter,
   registerDefaultAdapters,
+  ensureInstallableAdapters,
   detectAll,
   ensureAll,
   startAll,
