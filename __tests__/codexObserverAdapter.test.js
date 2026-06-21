@@ -69,6 +69,26 @@ describe('codexObserverAdapter', () => {
       expect(meta.session_id).toBe('alt-id');
     });
 
+    test('extracts Codex Desktop payload metadata', () => {
+      const meta = parseSessionMeta({
+        timestamp: '2026-06-21T14:00:00Z',
+        type: 'session_meta',
+        payload: {
+          id: 'desktop-s1',
+          cwd: '/projects/pixel-agent-desk',
+          model: 'gpt-5',
+          timestamp: '2026-06-21T13:59:00Z',
+        },
+      });
+
+      expect(meta).toMatchObject({
+        session_id: 'desktop-s1',
+        cwd: '/projects/pixel-agent-desk',
+        model: 'gpt-5',
+        created_at: '2026-06-21T14:00:00Z',
+      });
+    });
+
     test('returns null for non-session_meta records', () => {
       expect(parseSessionMeta({ type: 'function_call' })).toBeNull();
       expect(parseSessionMeta(null)).toBeNull();
@@ -152,6 +172,43 @@ describe('codexObserverAdapter', () => {
       expect(result.name).toBe('My Session');
       expect(result.project_path).toBe('/projects/app');
       expect(result.model).toBe('gpt-4o-mini');
+    });
+
+    test('Codex Desktop session_meta payload emits agent.started', () => {
+      const result = mapCodexRecordToAgentEvent({
+        type: 'session_meta',
+        payload: {
+          id: 'desktop-s1',
+          cwd: '/projects/desktop-app',
+          model: 'gpt-5',
+        },
+      });
+
+      expect(result.event).toBe('agent.started');
+      expect(result.agent_id).toBe('desktop-s1');
+      expect(result.name).toBe('desktop-app');
+      expect(result.project_path).toBe('/projects/desktop-app');
+    });
+
+    test('Codex Desktop response_item function_call uses fallback session id', () => {
+      const result = mapCodexRecordToAgentEvent(
+        {
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+          },
+        },
+        {
+          fallbackSessionId: 'desktop-s2',
+          sessionMetaMap: new Map([['desktop-s2', { cwd: '/app', thread_name: 'Desktop Thread' }]]),
+        }
+      );
+
+      expect(result.event).toBe('agent.working');
+      expect(result.agent_id).toBe('desktop-s2');
+      expect(result.tool).toBe('exec_command');
+      expect(result.name).toBe('Desktop Thread');
     });
 
     test('function_call emits agent.working', () => {
@@ -328,6 +385,24 @@ describe('codexObserverAdapter', () => {
       });
       const result = parseChatProcesses(content);
       expect(result[0].session_id).toBe('conv-001');
+    });
+
+    test('parses Codex Desktop top-level process array', () => {
+      const content = JSON.stringify([{
+        conversationId: 'desktop-proc',
+        command: 'npm test',
+        osPid: 1234,
+        cwd: '/projects/pad',
+      }]);
+
+      const result = parseChatProcesses(content);
+      expect(result).toHaveLength(1);
+      expect(result[0]).toMatchObject({
+        session_id: 'desktop-proc',
+        command: 'npm test',
+        pid: 1234,
+        cwd: '/projects/pad',
+      });
     });
 
     test('conversation_id normalizes to session_id', () => {

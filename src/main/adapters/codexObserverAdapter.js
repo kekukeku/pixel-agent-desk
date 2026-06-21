@@ -44,22 +44,52 @@ function safeParse(line) {
   }
 }
 
+function getPayload(record) {
+  return record && record.payload && typeof record.payload === 'object' ? record.payload : {};
+}
+
+function getRecordType(record) {
+  if (!record) return null;
+  const payload = getPayload(record);
+  if (record.type === 'event_msg' || record.type === 'response_item') {
+    return payload.type || record.type;
+  }
+  return record.type || payload.type || null;
+}
+
+function getSessionId(record, fallbackSessionId) {
+  const payload = getPayload(record);
+  return record.session_id ||
+    record.sessionId ||
+    record.conversationId ||
+    record.conversation_id ||
+    payload.session_id ||
+    payload.sessionId ||
+    payload.id ||
+    payload.conversationId ||
+    payload.conversation_id ||
+    fallbackSessionId ||
+    null;
+}
+
 function parseSessionMeta(record) {
-  if (!record || record.type !== 'session_meta') return null;
+  if (!record || getRecordType(record) !== 'session_meta') return null;
+  const payload = getPayload(record);
 
   return {
-    session_id: record.session_id || record.sessionId || null,
-    cwd: record.cwd || record.working_directory || null,
-    thread_name: record.thread_name || record.thread_title || null,
-    model: record.model || null,
-    created_at: record.created_at || record.timestamp || null,
+    session_id: getSessionId(record),
+    cwd: record.cwd || record.working_directory || payload.cwd || payload.working_directory || null,
+    thread_name: record.thread_name || record.thread_title || payload.thread_name || payload.thread_title || null,
+    model: record.model || payload.model || null,
+    created_at: record.created_at || record.timestamp || payload.created_at || payload.timestamp || null,
   };
 }
 
-function parseSessionEvent(record) {
-  if (!record || !record.type) return null;
+function parseSessionEvent(record, fallbackSessionId) {
+  if (!record) return null;
 
-  const type = record.type;
+  const payload = getPayload(record);
+  const type = getRecordType(record);
   let event = null;
 
   switch (type) {
@@ -94,11 +124,11 @@ function parseSessionEvent(record) {
 
   return {
     type: event,
-    session_id: record.session_id || record.sessionId || null,
-    tool_name: record.function_name || record.tool_name || record.command || null,
-    cwd: record.cwd || null,
-    model: record.model || null,
-    timestamp: record.timestamp || record.created_at || null,
+    session_id: getSessionId(record, fallbackSessionId),
+    tool_name: record.function_name || record.tool_name || record.command || payload.name || payload.function_name || payload.tool_name || payload.command || null,
+    cwd: record.cwd || payload.cwd || null,
+    model: record.model || payload.model || null,
+    timestamp: record.timestamp || record.created_at || payload.timestamp || payload.created_at || null,
     token_usage: (type === 'token_count' && record.token_usage)
       ? {
           input_tokens: record.token_usage.input_tokens || record.token_usage.input || 0,
@@ -125,15 +155,16 @@ function mapCodexRecordToAgentEvent(record, context) {
   const sessionIndex = ctx.sessionIndex || new Map();
   const sessionMetaMap = ctx.sessionMetaMap || new Map();
 
-  if (!record || !record.type) return null;
+  if (!record || !getRecordType(record)) return null;
 
-  const sessionId = record.session_id || record.sessionId;
+  const sessionId = getSessionId(record, ctx.fallbackSessionId);
   if (!sessionId) return null;
 
   // If session_meta, store it
-  if (record.type === 'session_meta') {
+  if (getRecordType(record) === 'session_meta') {
     const meta = parseSessionMeta(record);
     if (meta) {
+      meta.session_id = meta.session_id || sessionId;
       sessionMetaMap.set(sessionId, meta);
     }
     const stored = sessionMetaMap.get(sessionId);
@@ -151,7 +182,7 @@ function mapCodexRecordToAgentEvent(record, context) {
     };
   }
 
-  const event = parseSessionEvent(record);
+  const event = parseSessionEvent(record, sessionId);
   if (!event) return null;
 
   const stored = sessionMetaMap.get(sessionId);
@@ -275,12 +306,12 @@ function parseChatProcesses(content) {
   const parsed = safeParse(typeof content === 'string' ? content : JSON.stringify(content));
   if (!parsed) return [];
 
-  const processes = parsed.processes || parsed.tasks || [];
+  const processes = Array.isArray(parsed) ? parsed : (parsed.processes || parsed.tasks || []);
   return processes.map(function (p) {
     return {
       session_id: p.session_id || p.sessionId || p.conversationId || p.conversation_id || null,
       command: p.command || p.cmd || null,
-      pid: p.pid || null,
+      pid: p.pid || p.osPid || null,
       state: p.state || p.status || null,
       updatedAtMs: p.updatedAtMs || p.updated_at_ms || p.updatedAt || null,
       startedAtMs: p.startedAtMs || p.started_at_ms || p.startedAt || null,

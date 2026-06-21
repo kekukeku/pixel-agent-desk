@@ -58,6 +58,7 @@ function createCodexIntegration(options) {
       homeDir,
       processAgentEvent,
       debugLog,
+      replayExisting: false,
     });
 
     return observer.start();

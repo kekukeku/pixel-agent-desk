@@ -29,16 +29,20 @@ function createCodexObserver(options) {
   const sessionsDir = path.join(codexDir, 'sessions');
   const sessionIndexPath = path.join(codexDir, 'session_index.jsonl');
   const chatProcessesPath = path.join(codexDir, 'process_manager', 'chat_processes.json');
+  const globalStatePath = path.join(codexDir, '.codex-global-state.json');
 
   const processAgentEvent = opts.processAgentEvent || (function () {});
   const debugLog = opts.debugLog || (function () {});
   const pollIntervalMs = opts.pollIntervalMs || 2000;
   const quietMs = opts.quietMs || 60000;
   const staleMs = opts.staleMs || 600000;
+  const replayExisting = opts.replayExisting !== false;
 
   let pollTimer = null;
   let running = false;
   let lastEventAt = null;
+  let initialScan = true;
+  let observerStartedAt = 0;
 
   // 記錄每個 session 最後一次看到的檔案 offset，避免重放
   const sessionOffsets = new Map();
@@ -57,6 +61,10 @@ function createCodexObserver(options) {
 
   // 記錄已 emit 過的 chat_processes 活動 key，避免每輪 poll 重複 emit
   const chatProcessSeen = new Map();
+
+  // Codex Desktop keeps currently open workspaces in global state. This is the
+  // safest signal for an idle "Codex is open here" avatar.
+  const activeWorkspaceAgents = new Map();
 
   function loadSessionIndex() {
     try {
@@ -97,6 +105,76 @@ function createCodexObserver(options) {
       debugLog(`[CodexObserver] Failed to scan sessions: ${e.message}`);
       return [];
     }
+  }
+
+  function readActiveWorkspaceRoots() {
+    try {
+      if (!fs.existsSync(globalStatePath)) return [];
+      const raw = fs.readFileSync(globalStatePath, 'utf-8');
+      const parsed = safeParse(raw);
+      const roots = parsed && parsed['active-workspace-roots'];
+      return Array.isArray(roots) ? roots.filter(Boolean) : [];
+    } catch (e) {
+      debugLog(`[CodexObserver] Failed to read global state: ${e.message}`);
+      return [];
+    }
+  }
+
+  function workspaceAgentId(workspaceRoot) {
+    return `codex-workspace:${Buffer.from(workspaceRoot).toString('base64url')}`;
+  }
+
+  function emitActiveWorkspaceAgents() {
+    const roots = readActiveWorkspaceRoots();
+    const current = new Set(roots);
+    const now = Date.now();
+
+    for (const root of roots) {
+      if (activeWorkspaceAgents.has(root)) continue;
+
+      const agentId = workspaceAgentId(root);
+      activeWorkspaceAgents.set(root, agentId);
+      processAgentEvent({
+        event: 'agent.started',
+        agent_id: agentId,
+        source: 'codex',
+        name: path.basename(root) || 'Codex',
+        project_path: root,
+        timestamp: now,
+        metadata: {
+          observer_source: 'active-workspace-roots',
+        },
+      });
+      processAgentEvent({
+        event: 'agent.idle',
+        agent_id: agentId,
+        source: 'codex',
+        timestamp: now,
+      });
+      lastEventAt = now;
+      sessionActivity.set(agentId, now);
+      sessionIdle.set(agentId, true);
+    }
+
+    for (const [root, agentId] of activeWorkspaceAgents) {
+      if (current.has(root)) continue;
+      processAgentEvent({
+        event: 'agent.removed',
+        agent_id: agentId,
+        source: 'codex',
+        timestamp: now,
+      });
+      activeWorkspaceAgents.delete(root);
+      sessionActivity.delete(agentId);
+      sessionIdle.delete(agentId);
+    }
+  }
+
+  function sessionIdFromFilePath(filePath) {
+    const base = path.basename(filePath, '.jsonl');
+    const match = base.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
+    if (match) return match[1];
+    return path.basename(path.dirname(filePath));
   }
 
   function readNewLines(filePath, sessionId) {
@@ -143,22 +221,24 @@ function createCodexObserver(options) {
   function scan() {
     try {
       loadSessionIndex();
+      emitActiveWorkspaceAgents();
 
       const jsonlFiles = findSessionJsonls();
 
       for (const filePath of jsonlFiles) {
-        // Derive a session id from the file path (parent dir name is usually session id)
-        const sessionDirName = path.basename(path.dirname(filePath));
-        const records = readNewLines(filePath, sessionDirName);
+        const fallbackSessionId = sessionIdFromFilePath(filePath);
+        const records = readNewLines(filePath, fallbackSessionId);
 
         for (const record of records) {
-          const sid = record.session_id || record.sessionId || sessionDirName;
+          const payload = record && record.payload && typeof record.payload === 'object' ? record.payload : {};
+          const sid = record.session_id || record.sessionId || payload.id || payload.session_id || payload.sessionId || fallbackSessionId;
           const agentEvent = mapCodexRecordToAgentEvent(record, {
             sessionIndex,
             sessionMetaMap,  // persistent: survives across poll cycles
+            fallbackSessionId,
           });
 
-          if (agentEvent) {
+          if (agentEvent && (replayExisting || !initialScan)) {
             processAgentEvent(agentEvent);
             lastEventAt = Date.now();
             sessionActivity.set(sid, lastEventAt);
@@ -181,6 +261,7 @@ function createCodexObserver(options) {
           for (const proc of processes) {
             const sid = proc.session_id;
             const ts = proc.updatedAtMs || proc.startedAtMs || Date.now();
+            if (!replayExisting && initialScan && ts < observerStartedAt) continue;
 
             // Build a stable dedupe key without Date.now() for absent timestamps
             const dedupeKey = [
@@ -245,8 +326,10 @@ function createCodexObserver(options) {
           });
         }
       }
+      initialScan = false;
     } catch (e) {
       debugLog(`[CodexObserver] Scan error: ${e.message}`);
+      initialScan = false;
     }
   }
 
@@ -254,10 +337,13 @@ function createCodexObserver(options) {
     if (running) return { status: 'already_running' };
     running = true;
     lastEventAt = null;
+    initialScan = true;
+    observerStartedAt = Date.now();
     sessionActivity.clear();
     sessionIdle.clear();
     sessionMetaMap.clear();
     chatProcessSeen.clear();
+    activeWorkspaceAgents.clear();
 
     // Initial scan immediately
     scan();
@@ -278,6 +364,7 @@ function createCodexObserver(options) {
     sessionIdle.clear();
     sessionMetaMap.clear();
     chatProcessSeen.clear();
+    activeWorkspaceAgents.clear();
     sessionIndex.clear();
     debugLog('[CodexObserver] Stopped');
     return { status: 'stopped' };

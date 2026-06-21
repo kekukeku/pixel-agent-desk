@@ -49,6 +49,12 @@ describe('codexObserver', () => {
     fs.writeFileSync(path.join(procDir, 'chat_processes.json'), JSON.stringify(content), 'utf-8');
   }
 
+  function writeGlobalState(content) {
+    const codexDir = path.join(tempDir, '.codex');
+    fs.mkdirSync(codexDir, { recursive: true });
+    fs.writeFileSync(path.join(codexDir, '.codex-global-state.json'), JSON.stringify(content), 'utf-8');
+  }
+
   function writeNestedSession(relativePath, content) {
     // e.g. relativePath = "2026/06/21/session.jsonl"
     const filePath = path.join(sessionsDir, relativePath);
@@ -86,6 +92,99 @@ describe('codexObserver', () => {
       expect(started).toBeTruthy();
       expect(started.agent_id).toBe('nested-s1');
       expect(started.name).toBe('Nested Session');
+
+      obs.stop();
+    });
+
+    test('reads Codex Desktop nested JSONL payload format', () => {
+      writeNestedSession('2026/06/21/rollout-2026-06-21T22-30-00-019ee999-1111-7222-8333-abcdefabcdef.jsonl', [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: {
+            id: '019ee999-1111-7222-8333-abcdefabcdef',
+            cwd: '/projects/desktop-pad',
+            model: 'gpt-5',
+          },
+        }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+          },
+        }),
+      ].join('\n'));
+
+      const obs = createObs();
+      obs.start();
+
+      const started = events.find(function (e) { return e.event === 'agent.started'; });
+      expect(started).toBeTruthy();
+      expect(started.agent_id).toBe('019ee999-1111-7222-8333-abcdefabcdef');
+      expect(started.name).toBe('desktop-pad');
+      expect(started.project_path).toBe('/projects/desktop-pad');
+
+      const working = events.find(function (e) { return e.event === 'agent.working'; });
+      expect(working).toBeTruthy();
+      expect(working.agent_id).toBe('019ee999-1111-7222-8333-abcdefabcdef');
+      expect(working.tool).toBe('exec_command');
+
+      obs.stop();
+    });
+
+    test('active-workspace-roots emits an idle Codex workspace agent', () => {
+      writeGlobalState({
+        'active-workspace-roots': ['/projects/pixel-agent-desk'],
+      });
+
+      const obs = createObs();
+      obs.start();
+
+      const started = events.find(function (e) {
+        return e.event === 'agent.started' && e.project_path === '/projects/pixel-agent-desk';
+      });
+      expect(started).toBeTruthy();
+      expect(started.source).toBe('codex');
+      expect(started.name).toBe('pixel-agent-desk');
+
+      const idle = events.find(function (e) {
+        return e.event === 'agent.idle' && e.agent_id === started.agent_id;
+      });
+      expect(idle).toBeTruthy();
+
+      obs.stop();
+    });
+
+    test('replayExisting false baselines old JSONL records but keeps active workspace agent', () => {
+      writeGlobalState({
+        'active-workspace-roots': ['/projects/current-codex'],
+      });
+      writeNestedSession('2026/06/21/rollout-2026-06-21T22-30-00-019ee999-1111-7222-8333-abcdefabcdef.jsonl', [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: {
+            id: '019ee999-1111-7222-8333-abcdefabcdef',
+            cwd: '/projects/history',
+          },
+        }),
+        JSON.stringify({
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            name: 'exec_command',
+          },
+        }),
+      ].join('\n'));
+
+      const obs = createObs({ replayExisting: false });
+      obs.start();
+
+      expect(events.some(function (e) {
+        return e.agent_id === '019ee999-1111-7222-8333-abcdefabcdef';
+      })).toBe(false);
+      expect(events.some(function (e) {
+        return e.event === 'agent.started' && e.project_path === '/projects/current-codex';
+      })).toBe(true);
 
       obs.stop();
     });
@@ -381,6 +480,29 @@ describe('codexObserver', () => {
       expect(working).toBeTruthy();
       expect(working.tool).toBe('npm test');
       expect(working.source).toBe('codex');
+
+      obs.stop();
+    });
+
+    test('top-level chat_processes array emits agent.working', () => {
+      writeChatProcesses([{
+        conversationId: 'desktop-chat-proc',
+        command: 'npm start',
+        osPid: 4321,
+        cwd: '/projects/pixel-agent-desk',
+        updatedAtMs: 1719000000000,
+      }]);
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const working = events.find(function (e) {
+        return e.event === 'agent.working' && e.agent_id === 'desktop-chat-proc';
+      });
+      expect(working).toBeTruthy();
+      expect(working.tool).toBe('npm start');
+      expect(working.pid).toBe(4321);
+      expect(working.project_path).toBe('/projects/pixel-agent-desk');
 
       obs.stop();
     });
