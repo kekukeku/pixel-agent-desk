@@ -277,7 +277,68 @@ describe('codexObserverAdapter', () => {
       });
       const result = parseChatProcesses(content);
       expect(result).toHaveLength(2);
-      expect(result[0]).toEqual({ session_id: 's1', command: 'python script.py', pid: 12345, state: null });
+      expect(result[0]).toMatchObject({ session_id: 's1', command: 'python script.py', pid: 12345, state: null });
+    });
+
+    test('preserves updatedAtMs, startedAtMs, processId, turnId, itemId', () => {
+      const content = JSON.stringify({
+        processes: [{
+          session_id: 's1',
+          command: 'echo hello',
+          pid: 99,
+          updatedAtMs: 1719000000000,
+          startedAtMs: 1718999999000,
+          processId: 'proc-abc',
+          turnId: 'turn-1',
+          itemId: 'item-x',
+          state: 'running',
+        }],
+      });
+      const result = parseChatProcesses(content);
+      expect(result[0]).toMatchObject({
+        session_id: 's1',
+        updatedAtMs: 1719000000000,
+        startedAtMs: 1718999999000,
+        processId: 'proc-abc',
+        turnId: 'turn-1',
+        itemId: 'item-x',
+      });
+    });
+
+    test('preserves chatTitle and cwd', () => {
+      const content = JSON.stringify({
+        processes: [{
+          session_id: 's1',
+          command: 'ls',
+          chatTitle: 'Debug Session',
+          cwd: '/projects/my-codex-app',
+        }],
+      });
+      const result = parseChatProcesses(content);
+      expect(result[0].chatTitle).toBe('Debug Session');
+      expect(result[0].cwd).toBe('/projects/my-codex-app');
+    });
+
+    test('conversationId normalizes to session_id', () => {
+      const content = JSON.stringify({
+        processes: [{
+          conversationId: 'conv-001',
+          command: 'npm test',
+        }],
+      });
+      const result = parseChatProcesses(content);
+      expect(result[0].session_id).toBe('conv-001');
+    });
+
+    test('conversation_id normalizes to session_id', () => {
+      const content = JSON.stringify({
+        processes: [{
+          conversation_id: 'conv-002',
+          command: 'npm build',
+        }],
+      });
+      const result = parseChatProcesses(content);
+      expect(result[0].session_id).toBe('conv-002');
     });
 
     test('handles tasks field as fallback', () => {

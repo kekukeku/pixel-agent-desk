@@ -42,6 +42,13 @@ describe('codexObserver', () => {
     fs.writeFileSync(path.join(codexDir, 'session_index.jsonl'), content, 'utf-8');
   }
 
+  function writeChatProcesses(content) {
+    const codexDir = path.join(tempDir, '.codex');
+    const procDir = path.join(codexDir, 'process_manager');
+    fs.mkdirSync(procDir, { recursive: true });
+    fs.writeFileSync(path.join(procDir, 'chat_processes.json'), JSON.stringify(content), 'utf-8');
+  }
+
   function recordEvent(event) {
     events.push(event);
   }
@@ -327,6 +334,211 @@ describe('codexObserver', () => {
       events.length = 0;
       jest.advanceTimersByTime(1000);
       expect(events.filter(function (e) { return e.agent_id === 's1'; }).length).toBe(0);
+
+      obs.stop();
+    });
+  });
+
+  describe('chat_processes integration', () => {
+    test('fresh command in chat_processes emits agent.working', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp1',
+          command: 'npm test',
+          pid: 12345,
+          updatedAtMs: 1719000000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const working = events.find(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp1'; });
+      expect(working).toBeTruthy();
+      expect(working.tool).toBe('npm test');
+      expect(working.source).toBe('codex');
+
+      obs.stop();
+    });
+
+    test('repeated poll with same activity does not re-emit', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp2',
+          command: 'npm run build',
+          updatedAtMs: 1719000000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const before = events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp2'; });
+      expect(before.length).toBe(1);
+
+      // Next poll with same content
+      jest.advanceTimersByTime(300);
+      const after = events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp2'; });
+      expect(after.length).toBe(1);
+
+      obs.stop();
+    });
+
+    test('same session new updatedAtMs emits again', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp3',
+          command: 'npm test',
+          updatedAtMs: 1719000000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      expect(events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp3'; }).length).toBe(1);
+
+      // Update the file with new timestamp
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp3',
+          command: 'npm test',
+          updatedAtMs: 1719000005000,
+        }],
+      });
+
+      events.length = 0;
+      jest.advanceTimersByTime(300);
+
+      expect(events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp3'; }).length).toBe(1);
+
+      obs.stop();
+    });
+
+    test('chat_processes working clears idle dedupe, later quiet emits idle', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp4',
+          command: 'npm test',
+          updatedAtMs: 1719000000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200, quietMs: 500, staleMs: 10000 });
+      obs.start();
+
+      events.length = 0;
+
+      // Advance past quiet → should emit idle
+      jest.advanceTimersByTime(800);
+      expect(events.some(function (e) { return e.event === 'agent.idle' && e.agent_id === 'cp4'; })).toBe(true);
+
+      // Update chat_processes with new command
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp4',
+          command: 'npm run build',
+          updatedAtMs: 1719000005000,
+        }],
+      });
+
+      events.length = 0;
+      jest.advanceTimersByTime(300);
+
+      // New working event should arrive and clear idle
+      expect(events.some(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp4'; })).toBe(true);
+
+      // Then quiet again → a new idle
+      events.length = 0;
+      jest.advanceTimersByTime(800);
+      expect(events.some(function (e) { return e.event === 'agent.idle' && e.agent_id === 'cp4'; })).toBe(true);
+
+      obs.stop();
+    });
+
+    test('malformed chat_processes does not throw', () => {
+      const codexDir = path.join(tempDir, '.codex');
+      const procDir = path.join(codexDir, 'process_manager');
+      fs.mkdirSync(procDir, { recursive: true });
+      fs.writeFileSync(path.join(procDir, 'chat_processes.json'), '{broken', 'utf-8');
+
+      const obs = createObs();
+      expect(function () { obs.start(); }).not.toThrow();
+      obs.stop();
+    });
+
+    test('missing chat_processes file does not throw', () => {
+      const obs = createObs();
+      expect(function () { obs.start(); }).not.toThrow();
+      obs.stop();
+    });
+
+    test('chat_processes working includes project_path from session_meta', () => {
+      // First establish session_meta via JSONL
+      writeSession('cp-meta', 'events.jsonl', [
+        '{"type":"session_meta","session_id":"cp-meta","cwd":"/projects/chat-app","thread_name":"Chat Session"}',
+      ].join('\n'));
+
+      // Then put command in chat_processes
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp-meta',
+          command: 'echo hello',
+          updatedAtMs: 1719000000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const working = events.find(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp-meta'; });
+      expect(working).toBeTruthy();
+      expect(working.name).toBe('Chat Session');
+      expect(working.project_path).toBe('/projects/chat-app');
+
+      obs.stop();
+    });
+
+    test('chat_processes without timestamps does not re-emit on repeated poll', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp-nodate',
+          command: 'ls',
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const workingEvents = events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp-nodate'; });
+      expect(workingEvents.length).toBe(1);
+
+      // Next poll with same content — should not re-emit
+      jest.advanceTimersByTime(300);
+      const subsequent = events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp-nodate'; });
+      expect(subsequent.length).toBe(1);
+
+      obs.stop();
+    });
+
+    test('chat_processes-only (no JSONL) uses proc.chatTitle and proc.cwd for name/project_path', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp-title-only',
+          command: 'echo hi',
+          chatTitle: 'My Chat Title',
+          cwd: '/projects/only-chat',
+          updatedAtMs: 1719000000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200 });
+      obs.start();
+
+      const working = events.find(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp-title-only'; });
+      expect(working).toBeTruthy();
+      expect(working.name).toBe('My Chat Title');
+      expect(working.project_path).toBe('/projects/only-chat');
 
       obs.stop();
     });

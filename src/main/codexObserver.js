@@ -17,7 +17,9 @@ const os = require('os');
 const {
   safeParse,
   parseSessionIndex,
+  parseChatProcesses,
   mapCodexRecordToAgentEvent,
+  resolveDisplayName,
 } = require('./adapters/codexObserverAdapter');
 
 function createCodexObserver(options) {
@@ -26,6 +28,7 @@ function createCodexObserver(options) {
   const codexDir = path.join(homeDir, '.codex');
   const sessionsDir = path.join(codexDir, 'sessions');
   const sessionIndexPath = path.join(codexDir, 'session_index.jsonl');
+  const chatProcessesPath = path.join(codexDir, 'process_manager', 'chat_processes.json');
 
   const processAgentEvent = opts.processAgentEvent || (function () {});
   const debugLog = opts.debugLog || (function () {});
@@ -51,6 +54,9 @@ function createCodexObserver(options) {
 
   // session metadata cache（跨 poll 保留，避免增量輪次遺失 cwd/model）
   const sessionMetaMap = new Map();
+
+  // 記錄已 emit 過的 chat_processes 活動 key，避免每輪 poll 重複 emit
+  const chatProcessSeen = new Map();
 
   function loadSessionIndex() {
     try {
@@ -165,6 +171,56 @@ function createCodexObserver(options) {
         }
       }
 
+      // Scan chat_processes.json for active process/command activity
+      try {
+        if (fs.existsSync(chatProcessesPath)) {
+          const raw = fs.readFileSync(chatProcessesPath, 'utf-8');
+          const processes = parseChatProcesses(raw);
+
+          for (const proc of processes) {
+            const sid = proc.session_id;
+            const ts = proc.updatedAtMs || proc.startedAtMs || Date.now();
+
+            // Build a stable dedupe key without Date.now() for absent timestamps
+            const dedupeKey = [
+              sid,
+              proc.updatedAtMs || proc.startedAtMs || '',
+              proc.processId || proc.turnId || proc.itemId || '',
+              proc.command || '',
+            ].join('::');
+            if (chatProcessSeen.has(dedupeKey)) continue;
+            chatProcessSeen.set(dedupeKey, true);
+
+            // Resolve name/project_path: session meta → session index → proc.chatTitle/cwd
+            const meta = sessionMetaMap.get(sid);
+            const indexEntry = sessionIndex.get(sid);
+            let name = resolveDisplayName(meta, indexEntry);
+            if (name === 'Codex' && proc.chatTitle) name = proc.chatTitle;
+            if (name === 'Codex' && proc.cwd) name = path.basename(proc.cwd);
+
+            const projectPath = (meta && meta.cwd) || (indexEntry && indexEntry.cwd) || proc.cwd || '';
+
+            const agentEvent = {
+              event: 'agent.working',
+              agent_id: sid,
+              source: 'codex',
+              name,
+              project_path: projectPath,
+              tool: proc.command || null,
+              pid: proc.pid || undefined,
+              timestamp: ts,
+            };
+
+            processAgentEvent(agentEvent);
+            lastEventAt = Date.now();
+            sessionActivity.set(sid, lastEventAt);
+            sessionIdle.delete(sid);
+          }
+        }
+      } catch (e) {
+        debugLog(`[CodexObserver] Failed to read chat_processes: ${e.message}`);
+      }
+
       // Quiet / stale detection
       const now = Date.now();
       for (const [sid, activity] of sessionActivity) {
@@ -200,6 +256,7 @@ function createCodexObserver(options) {
     sessionActivity.clear();
     sessionIdle.clear();
     sessionMetaMap.clear();
+    chatProcessSeen.clear();
 
     // Initial scan immediately
     scan();
@@ -219,6 +276,7 @@ function createCodexObserver(options) {
     sessionActivity.clear();
     sessionIdle.clear();
     sessionMetaMap.clear();
+    chatProcessSeen.clear();
     sessionIndex.clear();
     debugLog('[CodexObserver] Stopped');
     return { status: 'stopped' };

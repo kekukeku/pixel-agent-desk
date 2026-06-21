@@ -278,10 +278,17 @@ function parseChatProcesses(content) {
   const processes = parsed.processes || parsed.tasks || [];
   return processes.map(function (p) {
     return {
-      session_id: p.session_id || p.sessionId || null,
+      session_id: p.session_id || p.sessionId || p.conversationId || p.conversation_id || null,
       command: p.command || p.cmd || null,
       pid: p.pid || null,
       state: p.state || p.status || null,
+      updatedAtMs: p.updatedAtMs || p.updated_at_ms || p.updatedAt || null,
+      startedAtMs: p.startedAtMs || p.started_at_ms || p.startedAt || null,
+      processId: p.processId || p.process_id || p.id || null,
+      turnId: p.turnId || p.turn_id || null,
+      itemId: p.itemId || p.item_id || null,
+      chatTitle: p.chatTitle || p.chat_title || p.title || null,
+      cwd: p.cwd || p.working_directory || p.workingDirectory || null,
     };
   }).filter(function (p) { return p.session_id; });
 }
