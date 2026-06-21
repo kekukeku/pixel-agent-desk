@@ -103,6 +103,14 @@ describe('codexIntegration', () => {
       expect(ad.getHealth().active).toBe(false);
     });
 
+    test('start when codex not installed returns skipped', () => {
+      // tempDir has no .codex directory → detectInstalled() returns false
+      const result = adapter.start();
+      expect(result.status).toBe('skipped');
+      expect(result.message).toContain('not installed');
+      expect(adapter.getHealth().active).toBe(false);
+    });
+
     test('start and stop with processAgentEvent and session data', () => {
       fs.mkdirSync(path.join(codexDir(), 'sessions', 's1'), { recursive: true });
       fs.writeFileSync(

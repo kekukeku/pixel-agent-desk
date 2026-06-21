@@ -597,4 +597,106 @@ describe('integrationManager', () => {
       manager.stopAll();
     });
   });
+
+  describe('formatCapabilityReport', () => {
+    function makeEntry(source, label, overrides) {
+      return {
+        source,
+        label,
+        installed: false,
+        integrated: false,
+        active: false,
+        setupMode: 'process-fallback',
+        lastEventAt: null,
+        error: null,
+        ...overrides,
+      };
+    }
+
+    test('empty report shows no adapters message', () => {
+      const result = manager.formatCapabilityReport([]);
+      expect(result).toContain('(no adapters registered)');
+    });
+
+    test('null report shows no adapters message', () => {
+      const result = manager.formatCapabilityReport(null);
+      expect(result).toContain('(no adapters registered)');
+    });
+
+    test('formats a single adapter', () => {
+      const report = [makeEntry('claude-code', 'Claude Code', { installed: true, integrated: false, setupMode: 'legacy-http-hook' })];
+      const result = manager.formatCapabilityReport(report);
+      expect(result).toContain('1 adapters registered');
+      expect(result).toContain('Claude Code: installed=true integrated=false active=false setupMode=legacy-http-hook');
+    });
+
+    test('includes lastEventAt when present', () => {
+      const report = [makeEntry('codex', 'Codex', { lastEventAt: 1710000000000 })];
+      const result = manager.formatCapabilityReport(report);
+      expect(result).toContain('lastEventAt=1710000000000');
+    });
+
+    test('omits lastEventAt when null', () => {
+      const report = [makeEntry('codex', 'Codex', { lastEventAt: null })];
+      const result = manager.formatCapabilityReport(report);
+      expect(result).not.toContain('lastEventAt');
+    });
+
+    test('formats error with [ERROR: ...] prefix', () => {
+      const report = [makeEntry('grok-build', 'Grok Build', { error: 'connection refused' })];
+      const result = manager.formatCapabilityReport(report);
+      expect(result).toContain('[ERROR: connection refused]');
+    });
+
+    test('omits error when null', () => {
+      const report = [makeEntry('grok-build', 'Grok Build', { error: null })];
+      const result = manager.formatCapabilityReport(report);
+      expect(result).not.toContain('[ERROR');
+    });
+
+    test('preserves input order, does not resort', () => {
+      const report = [
+        makeEntry('grok-build', 'Grok Build'),
+        makeEntry('codex', 'Codex'),
+        makeEntry('claude-code', 'Claude Code'),
+      ];
+      const result = manager.formatCapabilityReport(report);
+      const idxGrok = result.indexOf('Grok Build');
+      const idxCodex = result.indexOf('Codex');
+      const idxClaude = result.indexOf('Claude Code');
+      expect(idxGrok).toBeLessThan(idxCodex);
+      expect(idxCodex).toBeLessThan(idxClaude);
+    });
+
+    test('full report format is correct', () => {
+      const report = [
+        makeEntry('claude-code', 'Claude Code', { installed: true, integrated: true, setupMode: 'legacy-http-hook' }),
+        makeEntry('codex', 'Codex', { installed: true, integrated: true, active: true, setupMode: 'read-only-observer', lastEventAt: 1710000000000 }),
+        makeEntry('grok-build', 'Grok Build', { setupMode: 'command-hook' }),
+        makeEntry('antigravity', 'Antigravity', { error: 'not installed' }),
+      ];
+      const result = manager.formatCapabilityReport(report);
+      expect(result).toContain('4 adapters registered');
+      expect(result).toContain('Claude Code: installed=true integrated=true active=false setupMode=legacy-http-hook');
+      expect(result).toContain('Codex: installed=true integrated=true active=true setupMode=read-only-observer lastEventAt=1710000000000');
+      expect(result).toContain('Grok Build: installed=false integrated=false active=false setupMode=command-hook');
+      expect(result).toContain('Antigravity: installed=false integrated=false active=false setupMode=process-fallback [ERROR: not installed]');
+    });
+
+    test('getCapabilityReport structure is unchanged', () => {
+      manager.registerDefaultAdapters();
+      const report = manager.getCapabilityReport();
+      expect(report.length).toBeGreaterThan(0);
+      for (const entry of report) {
+        expect(entry).toHaveProperty('source');
+        expect(entry).toHaveProperty('label');
+        expect(entry).toHaveProperty('installed');
+        expect(entry).toHaveProperty('integrated');
+        expect(entry).toHaveProperty('active');
+        expect(entry).toHaveProperty('setupMode');
+        expect(entry).toHaveProperty('lastEventAt');
+        expect(entry).toHaveProperty('error');
+      }
+    });
+  });
 });

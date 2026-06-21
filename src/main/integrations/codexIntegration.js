@@ -46,6 +46,10 @@ function createCodexIntegration(options) {
   }
 
   function start() {
+    if (!detectInstalled()) {
+      return { status: 'skipped', message: 'codex not installed' };
+    }
+
     if (!processAgentEvent) {
       return { status: 'skipped', message: 'no processAgentEvent callback provided' };
     }

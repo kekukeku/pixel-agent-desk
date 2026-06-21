@@ -177,7 +177,7 @@ app.whenReady().then(() => {
   integrationMgr.detectAll();
   integrationMgr.ensureAll();
   integrationMgr.startAll();
-  debugLog(`[Main] Integration capability: ${JSON.stringify(integrationMgr.getCapabilityReport())}`);
+  debugLog(integrationMgr.formatCapabilityReport(integrationMgr.getCapabilityReport()));
 
   windowManager.startDashboardServer();
   livenessIntervals = startLivenessChecker({ agentManager, debugLog });

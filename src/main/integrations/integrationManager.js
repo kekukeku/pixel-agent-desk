@@ -131,6 +131,31 @@ function getCapabilityReport() {
   return report;
 }
 
+function formatCapabilityReport(report) {
+  if (!report || report.length === 0) {
+    return '[IntegrationManager] Capability report: (no adapters registered)';
+  }
+
+  const lines = [];
+  lines.push(`[IntegrationManager] ${report.length} adapters registered. Capability report:`);
+
+  for (const entry of report) {
+    let line = `  - ${entry.label}: installed=${entry.installed} integrated=${entry.integrated} active=${entry.active} setupMode=${entry.setupMode}`;
+
+    if (entry.lastEventAt) {
+      line += ` lastEventAt=${entry.lastEventAt}`;
+    }
+
+    if (entry.error) {
+      line += ` [ERROR: ${entry.error}]`;
+    }
+
+    lines.push(line);
+  }
+
+  return lines.join('\n');
+}
+
 function getRegisteredAdapters() {
   return Array.from(adapters.keys());
 }
@@ -288,6 +313,7 @@ module.exports = {
   startAll,
   stopAll,
   getCapabilityReport,
+  formatCapabilityReport,
   getRegisteredAdapters,
   cleanup
 };
