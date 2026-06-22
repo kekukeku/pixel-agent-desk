@@ -86,29 +86,17 @@ Run the read-only diagnostic to check integration status:
 ```bash
 npm run diagnose:integrations
 ```
-| `keep_alive_seconds` | `60` | `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE` | Periodic `agent.idle` heartbeat interval |
-| `event_endpoint` | `http://localhost:47821/events/agent` | `PIXEL_AGENT_DESK_EVENT_ENDPOINT` | Pixel Agent Desk event endpoint |
-| `source` | `pixel-agent-desk-watcher` | `PIXEL_AGENT_DESK_WATCHER_SOURCE` | Source label attached to emitted events |
-| `agents.*.id/name/type` | see defaults | `PIXEL_AGENT_DESK_AGENT_{ROLE}_{FIELD}` | Override or add visual roster agents. New agents must define `id`, `name`, and `type`. |
-| Extra agent JSON | unset | `PIXEL_AGENT_DESK_EXTRA_AGENTS_JSON` | Optional JSON object merged into the visual roster |
 
-Example one-off Openwork roster entry:
-
-```bash
-export PIXEL_AGENT_DESK_EXTRA_AGENTS_JSON='{"openwork":{"id":"openwork","name":"Openwork","type":"executor"}}'
-```
+See `docs/integration-smoke-test.md` for detailed per-agent smoke test instructions.
 
 ### Troubleshooting
 
-| Symptom | Cause | Fix |
+| Symptom | Likely Cause | Fix |
 |---|---|---|
-| Configured roster agents do not appear | Pixel Agent Desk is not running or the endpoint was changed | Start the app and verify `event_endpoint` points to `http://localhost:47821/events/agent` |
-| Roster changes do not appear | The watcher only loads config at startup | Restart `python3 watcher.py` |
-| Watcher exits with missing `watchdog` | Python dependency is not installed | Run `python3 -m pip install -r requirements.txt` |
-| An agent stays idle while working | No monitored workflow file changed and no external `agent.working` event was posted | Start the watcher on the workflow project root or have the agent POST to the Normalized Agent Event API |
+| Agent not appearing | Agent platform not installed or hook not registered | Run `npm run diagnose:integrations` and check `installed`/`integrated` columns |
+| Codex observer shows `active=false` | Diagnostics does not call `startAll()` | This is normal; `npm start` starts observers |
 
 ---
-
 
 ## Normalized Agent Event API
 
@@ -240,8 +228,7 @@ Subscription-based tools, local TUI-based agents, and other platforms that do no
 - Verify the hook server is up: `curl http://localhost:47821/hook` (should return 404 for GET, 200 for valid POST).
 
 **Ghost avatars persist**
-- Restart the watcher so future hook payloads include a stable `source` (e.g. `"source": "custom-watcher"`).
-- Make sure session IDs are allowlisted in `watcher-allowlist.json` or `name-map.json` so they are not treated as zombie sessions.
+- Make sure session IDs are in `watcher-allowlist.json` or `name-map.json` so they are not treated as zombie sessions on restart.
 
 ---
 
