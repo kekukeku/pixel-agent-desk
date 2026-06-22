@@ -73,7 +73,7 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 
 ---
 
-## 4. Per-Agent Capability Report (Live Smoke, 2026-06-22)
+## 4. Per-Agent Capability Report (Live Smoke, 2026-06-23)
 
 | Agent | installed | integrated | active (diagnostics) | active (npm start) | setupMode |
 |---|---|---|---|---|---|
@@ -136,7 +136,9 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 
 **Key design**:
 - Uses **command hooks**, NOT HTTP localhost hooks (avoids Grok's HTTPS requirement).
-- Forwarder runs as: `node "<path>/grok-forwarder.js" <eventName>` with quoted paths.
+- In development, hooks may run as: `node "<path>/grok-forwarder.js" <eventName>`.
+- In packaged builds, hooks run through the app executable:
+  `ELECTRON_RUN_AS_NODE=1 "<Pixel Agent Desk executable>" "$HOME/.pixel-agent-desk/runtime/forwarders/grok-forwarder.js" <eventName>`.
 - Fail-open: forwarder always exits 0, never blocks Grok.
 
 ---
@@ -153,7 +155,10 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 **Key design**:
 - Lifecycle events (PreInvocation, Stop): bare command, no matcher.
 - Tool events (PreToolUse, PostToolUse): `matcher: "*"`.
-- All commands include event name as argv: `node "<fwd.js>" PreToolUse`.
+- All commands include event name as argv.
+- In development, hooks may run as: `node "<fwd.js>" PreToolUse`.
+- In packaged builds, hooks run through the app executable:
+  `ELECTRON_RUN_AS_NODE=1 "<Pixel Agent Desk executable>" "$HOME/.pixel-agent-desk/runtime/forwarders/antigravity-forwarder.js" PreToolUse`.
 - Forwarder fail-open: exits 0 on any error.
 
 ---
@@ -195,6 +200,14 @@ A: Each adapter writes to a specific path:
 - Antigravity: `~/.gemini/config/hooks.json` (adds `pixel-agent-desk` key only)
 - OpenCode: `~/.config/opencode/plugins/pad-adapter.js`
 
+Packaged builds also materialize runtime files under:
+
+```text
+~/.pixel-agent-desk/runtime/
+```
+
+Grok and Antigravity hook commands should point to `runtime/forwarders/` in packaged validation, not to repo `src/forwarders/`.
+
 ### Q: A character doesn't appear. What should I check first?
 A: Check `src/debug.log`:
 1. Look for `[IntegrationManager]` capability report — are all adapters registered?
@@ -202,3 +215,40 @@ A: Check `src/debug.log`:
 3. For Codex: check `[CodexObserver]` lines — is the observer scanning sessions?
 4. For hook-based adapters: check `[Hook] ←` or `[Event] ←` — did the hook fire?
 5. If no events arrive: check the agent's hook config file exists and has the correct structure.
+
+---
+
+## 7. Packaged App Smoke Gate
+
+Use this when validating a release build.
+
+1. Commit source changes first.
+2. Run `npm run dist:mac`.
+3. Close all development Pixel Agent Desk instances.
+4. Open only `release/mac/Pixel Agent Desk.app`.
+5. Inspect hook config:
+   - `~/.grok/hooks/pixel-agent-desk.json`
+   - `~/.gemini/config/hooks.json`
+6. Confirm commands contain:
+   - `ELECTRON_RUN_AS_NODE=1`
+   - `~/.pixel-agent-desk/runtime/forwarders/`
+   - no repo `src/forwarders/` path
+7. Pipe-test both forwarders while the packaged app is running.
+
+Antigravity example:
+
+```bash
+echo '{"conversationId":"packaged-smoke-antigravity","workspacePaths":["/tmp/packaged-test"],"event":"PreInvocation"}' \
+  | ELECTRON_RUN_AS_NODE=1 "./release/mac/Pixel Agent Desk.app/Contents/MacOS/Pixel Agent Desk" \
+    "$HOME/.pixel-agent-desk/runtime/forwarders/antigravity-forwarder.js" PreInvocation
+```
+
+Grok example:
+
+```bash
+echo '{"hookEventName":"SessionStart","sessionId":"packaged-smoke-grok","workspaceRoot":"/tmp/packaged-test"}' \
+  | ELECTRON_RUN_AS_NODE=1 "./release/mac/Pixel Agent Desk.app/Contents/MacOS/Pixel Agent Desk" \
+    "$HOME/.pixel-agent-desk/runtime/forwarders/grok-forwarder.js" SessionStart
+```
+
+Both commands should exit `0`, avoid stdout/stderr noise, and produce `[Processor]` events in PAD logs.

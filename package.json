@@ -1,7 +1,7 @@
 {
   "name": "pixel-agent-desk",
   "version": "2.0.0",
-  "description": "Visualize multi-agent Claude CLI sessions as pixel avatars in real time",
+  "description": "Visualize Claude, Codex, Grok, Antigravity, and OpenCode agent sessions as pixel avatars in real time",
   "main": "src/main.js",
   "scripts": {
     "postinstall": "node src/install.js",
