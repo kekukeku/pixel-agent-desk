@@ -11,11 +11,7 @@
     "test:coverage": "jest --coverage",
     "test:watch": "jest --watch",
     "dashboard": "node src/dashboard-server.js",
-    "reviewer-adapter": "node agent-runner/reviewer-adapter-server.js",
-    "workflow": "bash scripts/start_pixel_workflow.sh",
     "diagnose:integrations": "node scripts/diagnose-integrations.js",
-    "generate-review-diff": "node agent-runner/generate-review-diff.js",
-    "groupchat:plan": "node agent-runner/groupchat-planning.js",
     "lint": "eslint src/",
     "lint:fix": "eslint src/ --fix",
     "format": "prettier --write \"src/**/*.js\" \"__tests__/**/*.js\"",
@@ -62,11 +58,15 @@
       "target": [
         {
           "target": "nsis",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "portable",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ]
     },
@@ -74,7 +74,10 @@
       "target": [
         {
           "target": "dmg",
-          "arch": ["x64", "arm64"]
+          "arch": [
+            "x64",
+            "arm64"
+          ]
         }
       ],
       "category": "public.app-category.developer-tools"
@@ -83,11 +86,15 @@
       "target": [
         {
           "target": "AppImage",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         },
         {
           "target": "deb",
-          "arch": ["x64"]
+          "arch": [
+            "x64"
+          ]
         }
       ],
       "category": "Development"

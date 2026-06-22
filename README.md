@@ -72,220 +72,40 @@ Example `~/.pixel-agent-desk/config.json`:
 }
 ```
 
-## Repository Watcher
+## Agent Detection
 
-You can run `watcher.py` (written in Python 3) to automatically monitor this repository for task changes, review requests, and review outputs. It performs two duties:
-1. **Visual status updates**: reports activity events to the Electron app to animate Codex, Antigravity, and Grok Build characters.
-2. **Execution handoff**: runs local trigger or routing commands when tasks change.
+Pixel Agent Desk automatically detects and connects to five AI agent platforms at startup. See `docs/integration-smoke-test.md` for a complete guide.
 
-Additionally, in active mode, the watcher automatically coordinates a **review-decision final-mile dispatch** after Grok Build publishes `REVIEWS/review_NNN.md`. For `APPROVE` or `REQUEST_CHANGES` decisions, the watcher invokes the configured `review_decision.command` (which defaults to opening an Antigravity follow-up session via `python3 scripts/trigger_antigravity.py --review-decision --task {task_num}`) once the review router writes `REVIEWS/handoff_payload_NNN.json`.
+- **Claude Code**: HTTP hook via `~/.claude/settings.json`
+- **Codex**: Read-only observer of `~/.codex/sessions/`
+- **Grok Build**: Command-hook forwarder via `~/.grok/hooks/`
+- **Antigravity**: Command-hook forwarder via `~/.gemini/config/hooks.json`
+- **OpenWork / OpenCode**: Plugin via `~/.config/opencode/plugins/`
 
-### Quick Start
-
-To setup and run the repository watcher on a clean checkout, follow these steps:
-
-- [ ] **1. Run Pixel Agent Desk**:
-  Install Node dependencies and start the Electron application or the local web dashboard server:
-  ```bash
-  # Install dependencies
-  npm install
-
-  # Start desktop app
-  npm start
-  # OR start web dashboard server
-  npm run dashboard
-  ```
-- [ ] **2. Install Python Dependencies**:
-  Install required dependencies using the root-level `requirements.txt`:
-  ```bash
-  python3 -m pip install -r requirements.txt
-  ```
-- [ ] **3. Terminate Conflict Watchers**:
-  Ensure you have terminated any old watcher processes (e.g., from other tasks or projects) to prevent state conflicts.
-- [ ] **4. Run the Watcher**:
-  Start the watcher script at the repository root:
-  ```bash
-  python3 watcher.py
-  ```
-  *Optionally override the watched project root path using the `--project-root` argument or the `PIXEL_AGENT_DESK_PROJECT_ROOT` environment variable:*
-  ```bash
-  # CLI argument override
-  python3 watcher.py --project-root "/path/to/another/repo"
-
-  # Environment variable override
-  PIXEL_AGENT_DESK_PROJECT_ROOT="/path/to/another/repo" python3 watcher.py
-  ```
-
-  *Alternatively, to run the full local automation loop (which automatically launches the watcher and the reviewer adapter together), run:*
-  ```bash
-  npm run workflow
-  ```
-
-> [!IMPORTANT]
-> **Keeping the Local Automation Loop Alive**
-> - **Long-Running Process**: `npm run workflow` is a long-running process that must remain active and keep occupying the terminal window for the local automation loop to function. It is **not** a one-shot setup command.
-> - **Local Loop Dependency**: The automation loop depends on **both** the repository watcher and the reviewer adapter server running simultaneously. If the shell prompt returns or the process exits, automatic handoffs and reviews will stop.
-> - **Reviewer Adapter Health Check**: You can verify that the reviewer adapter is active by visiting its health check endpoint at `http://127.0.0.1:47822/health` while the workflow is running.
-> - **Using the Terminal**: If you need to execute other commands while the workflow is running, do not terminate the process or reuse that terminal. Instead, open a new terminal window or tab.
-
-
-### Operating Modes
-
-The watcher supports two execution modes, controlled by the `execution_mode` config key (or env var override). **The default is `visual-only`** — no commands or webhooks are executed until you explicitly opt in to `active`.
-
-#### 1. Visual-Only Mode (Default)
-
-`"execution_mode": "visual-only"` (or unset)
-
-The watcher posts character state updates to the desktop application and writes fallback JSON payload files to `REVIEWS/` for manual inspection. No commands or webhooks are triggered.
-
-**Fallback payload files written in visual-only mode:**
-
-| Trigger | File written | Condition |
-|---|---|---|
-| Task `IN_PROGRESS` | `REVIEWS/task_handoff_NNN.json` | `TASKS/task_NNN.md` status changes |
-| Registry `UNDER_REVIEW` | `REVIEWS/grok_handoff_NNN.json` | `AGENT_STATE.md` row transitions |
-
-> **Pipeline separation**: `task_handoff_NNN.json` is exclusively owned by the task-execution pipeline (Antigravity). The review-decision router (`route-review-decision.js`) produces `handoff_payload_NNN.json`. These files must never be conflated.
-
-**`task_handoff_NNN.json` payload fields:**
-
-| Field | Type | Description |
-|---|---|---|
-| `task_num` | string | 3-digit task number (e.g. `"008"`) |
-| `branch` | string | Branch associated with the task |
-| `project_root` | string | Absolute path of the watched repository |
-| `status` | string | `"IN_PROGRESS"` |
-| `timestamp` | number | Float epoch timestamp |
-
-**`grok_handoff_NNN.json` payload fields:**
-
-| Field | Type | Description |
-|---|---|---|
-| `task_num` | string | 3-digit task number |
-| `project_root` | string | Absolute path of the watched repository |
-| `status` | string | `"UNDER_REVIEW"` |
-| `timestamp` | number | Float epoch timestamp |
-
-#### 2. Active Mode
-
-`"execution_mode": "active"`
-
-The watcher dispatches configured commands or webhooks asynchronously via background threads. Each dispatch:
-1. Writes the fallback payload file (audit artifact, task-execution pipeline only)
-2. Checks an in-session idempotency key — skips if already fired for the same `task:target:trigger:state`
-3. Spawns a background thread to run the command (`subprocess` with timeout) or POST the webhook
-4. Writes `REVIEWS/dispatch_result_{task_num}_{target}.json` with success/failure details
-
-**If `execution_mode` is `active` but no `command` or `webhook` is configured for a target,** the watcher prints an error to stderr and writes a failed `dispatch_result_*` file. It does **not** silently pass.
-
-**`dispatch_result_NNN_target.json` schema:**
-
-| Field | Type | Description |
-|---|---|---|
-| `task_num` | string | Task number |
-| `target` | string | `"antigravity"` or `"grok"` |
-| `trigger` | string | `"task_status"`, `"registry_state"`, or `"review_decision"` |
-| `state` | string | State or decision that triggered dispatch |
-| `dispatch_key` | string | Idempotency key: `{task_num}:{target}:{trigger}:{state}` |
-| `transport` | string | `"command"` or `"webhook"` or `null` |
-| `success` | boolean | Whether the dispatch completed successfully |
-| `returncode` | integer \| null | Command exit code (`null` for webhooks) |
-| `http_status` | integer \| null | HTTP response status (`null` for commands) |
-| `timed_out` | boolean | Whether the command exceeded `command_timeout_seconds` |
-| `stdout_excerpt` | string | First `output_capture_bytes` of stdout |
-| `stderr_excerpt` | string | First `output_capture_bytes` of stderr |
-| `error` | string \| null | Exception message on unexpected failure |
-| `started_at` | number | Float epoch timestamp of worker start |
-| `finished_at` | number | Float epoch timestamp of worker finish |
-
-### Configuration (`~/.pixel-agent-desk/watcher.json`)
-
-```json
-{
-  "execution_mode": "visual-only",
-  "antigravity": {
-    "command": "node scripts/run-executor.js {task_num}",
-    "webhook": "http://localhost:3000/webhook/antigravity"
-  },
-  "grok": {
-    "command": "node agent-runner/trigger-review.js {task_num}",
-    "webhook": null
-  },
-  "planning": {
-    "command": "npm run groupchat:plan -- --session {session_id} --input-file {input_path}",
-    "webhook": null
-  },
-  "review_decision": {
-    "command": "python3 scripts/trigger_antigravity.py --review-decision --task {task_num}",
-    "webhook": null
-  },
-  "keep_alive_seconds": 60,
-  "command_timeout_seconds": 600,
-  "output_capture_bytes": 8192,
-  "agents": {
-    "codex": {
-      "id": "my-codex-id",
-      "name": "Custom Codex",
-      "type": "planner"
-    }
-  }
-}
+Run the read-only diagnostic to check integration status:
+```bash
+npm run diagnose:integrations
 ```
-
-**Configuration reference:**
-
-| Key | Default | Env override | Description |
-|---|---|---|---|
-| `execution_mode` | `"visual-only"` | `PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE` | `"visual-only"` or `"active"` |
-| `antigravity.command` | `""` | — | Shell command for Antigravity handoffs; `{task_num}` is replaced at runtime |
-| `antigravity.webhook` | `""` | — | HTTP POST URL for Antigravity handoffs (used if command is empty) |
-| `grok.command` | `"node agent-runner/trigger-review.js {task_num}"` | — | Shell command for Grok review dispatch |
-| `grok.webhook` | `""` | — | HTTP POST URL for Grok dispatch (used if command is empty) |
-| `planning.command` | `""` | — | Shell command for consultative planning handoffs; `{session_id}` and `{input_path}` are replaced at runtime |
-| `planning.webhook` | `""` | — | HTTP POST URL for consultative planning handoffs (used if command is empty) |
-| `review_decision.command` | `"python3 scripts/trigger_antigravity.py --review-decision --task {task_num}"` | — | Shell command for review-decision final-mile dispatches; `{task_num}` is replaced at runtime |
-| `review_decision.webhook` | `""` | — | HTTP POST URL for review-decision final-mile dispatches (used if command is empty) |
 | `keep_alive_seconds` | `60` | `PIXEL_AGENT_DESK_WATCHER_KEEP_ALIVE` | Periodic `agent.idle` heartbeat interval |
-| `command_timeout_seconds` | `600` | `PIXEL_AGENT_DESK_WATCHER_COMMAND_TIMEOUT` | Max seconds before a dispatched command is killed |
-| `output_capture_bytes` | `8192` | `PIXEL_AGENT_DESK_WATCHER_OUTPUT_CAPTURE_BYTES` | Max bytes captured from stdout/stderr per dispatch |
-| `agents.*.id/name/type` | see defaults | `PIXEL_AGENT_DESK_AGENT_{ROLE}_{FIELD}` | Override per-agent identity (roles: `CODEX`, `ANTIGRAVITY`, `GROK_BUILD`) |
+| `event_endpoint` | `http://localhost:47821/events/agent` | `PIXEL_AGENT_DESK_EVENT_ENDPOINT` | Pixel Agent Desk event endpoint |
+| `source` | `pixel-agent-desk-watcher` | `PIXEL_AGENT_DESK_WATCHER_SOURCE` | Source label attached to emitted events |
+| `agents.*.id/name/type` | see defaults | `PIXEL_AGENT_DESK_AGENT_{ROLE}_{FIELD}` | Override or add visual roster agents. New agents must define `id`, `name`, and `type`. |
+| Extra agent JSON | unset | `PIXEL_AGENT_DESK_EXTRA_AGENTS_JSON` | Optional JSON object merged into the visual roster |
 
-- `{task_num}`: Replaced with the 3-digit task number (e.g. `006`) at dispatch time.
-- `{session_id}`: Replaced with the session ID (e.g. `013`) at dispatch time for the planning target.
-- `{input_path}`: Replaced with the absolute path to the input trigger file (e.g. the path to `groupchat_request_{session_id}.json` under `PLANNING/`) for the planning target.
-- Commands are **always non-blocking** — they run in background threads; the watcher loop continues.
-- If both `command` and `webhook` are set, `command` takes precedence.
+Example one-off Openwork roster entry:
 
-### Dry-run / Planning Mode (`--simulate-handoff`)
-
-Run without starting the watchdog daemon:
-
-```sh
-python3 watcher.py --simulate-handoff [--project-root /path/to/repo]
+```bash
+export PIXEL_AGENT_DESK_EXTRA_AGENTS_JSON='{"openwork":{"id":"openwork","name":"Openwork","type":"executor"}}'
 ```
-
-Scans the repository and prints a JSON array of every dispatch that *would* fire given the current file states and configured `execution_mode`. **No files are written, no commands are executed.**
-
-Each entry includes `dispatch_key`, `transport` (`command`/`webhook`/`none`), `would_error_active` (true if mode is active but no consumer configured), and `payload_shape`.
 
 ### Troubleshooting
 
 | Symptom | Cause | Fix |
 |---|---|---|
-| No commands executed, only JSON files appear in `REVIEWS/` | `execution_mode` is `"visual-only"` (default) | Set `"execution_mode": "active"` in `watcher.json` or `PIXEL_AGENT_DESK_WATCHER_EXECUTION_MODE=active` |
-| `Error: execution_mode=active but no command/webhook configured` on stderr | `active` mode enabled but target has no consumer | Add `command` or `webhook` for the failing target in `watcher.json` |
-| `dispatch_result_NNN_target.json` shows `"success": false, "timed_out": true` | Command ran longer than `command_timeout_seconds` | Increase `command_timeout_seconds` or optimize the command |
-| `task_handoff_NNN.json` is not being updated on review events | Correct — review-decision dispatches only write `dispatch_result_*`; `task_handoff_*` is exclusively for task-status pipeline | Inspect `dispatch_result_NNN_antigravity.json` for review dispatch results |
-| Dispatch fires only once per session even after file re-save | Idempotency key deduplicated in-session | Restart the watcher; idempotency resets on start |
-
-**Runtime artifacts** (gitignored, never committed):
-
-```
-REVIEWS/task_handoff_*.json      ← visual-only fallback: task-execution pipeline
-REVIEWS/grok_handoff_*.json      ← visual-only fallback: review-dispatch pipeline
-REVIEWS/dispatch_result_*.json   ← active mode result records (per target per task)
-```
+| Configured roster agents do not appear | Pixel Agent Desk is not running or the endpoint was changed | Start the app and verify `event_endpoint` points to `http://localhost:47821/events/agent` |
+| Roster changes do not appear | The watcher only loads config at startup | Restart `python3 watcher.py` |
+| Watcher exits with missing `watchdog` | Python dependency is not installed | Run `python3 -m pip install -r requirements.txt` |
+| An agent stays idle while working | No monitored workflow file changed and no external `agent.working` event was posted | Start the watcher on the workflow project root or have the agent POST to the Normalized Agent Event API |
 
 ---
 
@@ -411,36 +231,6 @@ Subscription-based tools, local TUI-based agents, and other platforms that do no
 - The context window indicator shows **`--`** (disabled).
 - Overall KPIs for token totals and costs on the dashboard are reframed to highlight live/idle metered activity, excluding non-metered agents from the totals to avoid skewing the averages.
 
----
-
-## Consultative GroupChat Planning
-
-Pixel Agent Desk features a consultative, multi-agent planning workflow that allows Codex (Planner), Grok Build (Reviewer), and Antigravity (Executor) to participate in a shared, visible planning conversation *before* a task enters the formal execution pipeline. 
-
-### Life Cycle & Workflow Integration
-1. **DRAFT Stage**: Codex creates a new task or planning session. Under the hood, the watcher monitors the directory for `DRAFT` status and dispatches the GroupChat runner (Trigger A).
-2. **Consultative GroupChat**: The runner initiates a fixed seven-step dialogue to collect suggestions and review points.
-3. **Planning Authority**: Codex (小C) maintains the final authority to accept, modify, or reject advice before releasing the task to `IN_PROGRESS` (Trigger B).
-4. **Implementation**: Once in `IN_PROGRESS`, Antigravity (小A) performs the actual code changes (Trigger C).
-5. **Review**: Moving the task registry to `UNDER_REVIEW` dispatches the formal review checks (Trigger F).
-
-### CLI Usage
-You can run the planning runner locally in a deterministic mode to generate plans and mock transcripts:
-```bash
-npm run groupchat:plan -- --session 001 --input "Implement a new database index for tasks"
-```
-Options:
-- `--session <sessionId>`: The unique numeric string identifier for the planning session.
-- `--input <text>`: The initial requirement or objective text.
-- `--input-file <path>`: Alternative path to a text file containing requirements.
-- `--task <taskNum>`: Optional task number to link this session to a formal task.
-- `--force`: Overwrite existing artifacts in the `PLANNING/` directory.
-
-### Generated Artifacts
-Every planning session outputs three files inside the `PLANNING/` directory:
-- `PLANNING/groupchat_<sessionId>.json`: Structured v1 timeline data for dashboard integration.
-- `PLANNING/groupchat_<sessionId>.md`: A human-readable full conversation transcript showing the sequence of proposals and advice.
-- `PLANNING/draft_<sessionId>.md`: A clean proposal markdown containing the finalized task specification drafted by Codex.
 ---
 
 ## Troubleshooting
