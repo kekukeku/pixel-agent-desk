@@ -231,11 +231,20 @@ function updateAgentUI(ag) {
   const existing = DOM.agentPanel.querySelector(`[data-id="${ag.id}"]`);
 
   const stClass = ['working', 'thinking', 'error', 'done', 'completed'].includes(ag.status) ? ag.status : 'waiting';
-  const stText = ag.status.toUpperCase();
-  const typeHtml = ag.metadata?.isSubagent ? '<span class="mc-type-badge">SUB</span>' : '<span class="mc-type-badge main">MAIN</span>';
+  const stText = (ag.statusBadge || ag.status || 'IDLE');
+  const typeHtml = ag.metadata?.isSubagent ? '<span class="mc-type-badge">↳ SUB</span>' : '<span class="mc-type-badge main">MAIN</span>';
+
+  // Source badge
+  const srcClass = (function (s) {
+    const m = { 'claude-code': 'src-claude', 'codex': 'src-codex', 'grok-build': 'src-grok', 'antigravity': 'src-antigravity', 'opencode': 'src-opencode' };
+    return m[s] || 'src-unknown';
+  })(ag.source || '');
+  const srcLabel = (ag.sourceLabel || ag.source || 'Unknown');
+  const safeSrcLabel = escapeHtml(srcLabel);
+  const sourceBadge = `<span class="mc-source-badge ${srcClass}" title="${safeSrcLabel}">${safeSrcLabel}</span>`;
 
   const isAct = ['working', 'thinking'].includes(stClass);
-  const actText = ag.currentTool ? `<span class="hl">${ag.currentTool}</span>` : (isAct ? stText : 'Idling...');
+  const actText = ag.activityText || (ag.currentTool ? `CMD> ${ag.currentTool}` : (isAct ? stText : 'Idling...'));
 
   const isMetered = hasMeteredUsage(ag);
   const tokens = formatNum((ag.tokenUsage?.inputTokens || 0) + (ag.tokenUsage?.outputTokens || 0));
@@ -325,8 +334,9 @@ function updateAgentUI(ag) {
         <div class="mc-agent-header">
           <div class="mc-agent-name">${nameContent} ${typeHtml}</div>
           <div class="mc-agent-status ${stClass}">${stText}</div>
+          ${sourceBadge}
         </div>
-        <div class="mc-agent-activity">CMD> ${actText}</div>
+        <div class="mc-agent-activity">${actText}</div>
       </div>
     </div>
     ${timelineHtml}
@@ -351,9 +361,10 @@ function updateAgentUI(ag) {
 
   if (existing) {
     existing.innerHTML = html;
+    existing.className = 'mc-agent-card' + (ag.metadata?.isSubagent ? ' subagent' : '');
   } else {
     const div = document.createElement('div');
-    div.className = 'mc-agent-card';
+    div.className = 'mc-agent-card' + (ag.metadata?.isSubagent ? ' subagent' : '');
     div.dataset.id = ag.id;
     div.innerHTML = html;
     DOM.agentPanel.appendChild(div);
@@ -433,7 +444,7 @@ function showOfficePopover(canvas, char) {
   popoverEl.innerHTML = `
     <div class="pop-header">
       <span class="pop-name">${name}</span>
-      <div class="mc-agent-status ${stClass}" style="font-size:0.6rem">${status.toUpperCase()}</div>
+      <div class="mc-agent-status ${stClass}" style="font-size:0.6rem">${ag ? (ag.statusBadge || ag.status || '') : status.toUpperCase()}</div>
     </div>
     <div class="pop-row"><span>Project</span><span class="pop-val">${project}</span></div>
     <div class="pop-row"><span>Tool</span><span class="pop-val">${tool}</span></div>

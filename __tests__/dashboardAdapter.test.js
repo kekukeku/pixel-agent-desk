@@ -55,6 +55,7 @@ describe('dashboardAdapter', () => {
         avatarIndex: 2,
         isSubagent: false,
         isTeammate: false,
+        source: 'claude-code',
         parentId: null,
         permissionMode: 'default',
         teammateName: null,
@@ -78,7 +79,7 @@ describe('dashboardAdapter', () => {
       expect(result.avatarIndex).toBe(2);
       expect(result.metadata.isSubagent).toBe(false);
       expect(result.metadata.permissionMode).toBe('default');
-      expect(result.metadata.source).toBe('pixel-agent-desk');
+      expect(result.metadata.source).toBe('claude-code');
       expect(result.usageAvailable).toBe(true);
       expect(result.timing.elapsed).toBeGreaterThan(0);
       expect(result.timing.active).toBe(true);

@@ -4,6 +4,7 @@
  */
 
 const path = require('path');
+const { formatAgentSource, formatAgentStatus, formatAgentActivity, resolveAgentDisplayName, safeStr } = require('./agentDisplayFormat');
 
 /**
  * State mapping from Pixel Agent Desk to Dashboard
@@ -90,7 +91,7 @@ function adaptAgentToDashboard(pixelAgent) {
   return {
     id: pixelAgent.id || pixelAgent.sessionId,
     sessionId: pixelAgent.sessionId,
-    name: pixelAgent.displayName || 'Agent',
+    name: resolveAgentDisplayName(pixelAgent),
     project: extractProjectName(pixelAgent.projectPath),
     status: mapPixelStateToDashboardState(pixelAgent.state),
     type: determineAgentType(pixelAgent),
@@ -100,6 +101,10 @@ function adaptAgentToDashboard(pixelAgent) {
     currentTool: pixelAgent.currentTool || null,
     lastMessage: pixelAgent.lastMessage || null,
     avatarIndex: pixelAgent.avatarIndex !== undefined ? pixelAgent.avatarIndex : null,
+    source: pixelAgent.source || null,
+    sourceLabel: formatAgentSource(pixelAgent.source),
+    statusBadge: formatAgentStatus(pixelAgent.state),
+    activityText: formatAgentActivity(pixelAgent.state, pixelAgent.currentTool),
     metadata: {
       isSubagent: pixelAgent.isSubagent || false,
       isTeammate: pixelAgent.isTeammate || false,
@@ -109,7 +114,7 @@ function adaptAgentToDashboard(pixelAgent) {
       teammateName: pixelAgent.teammateName || null,
       teamName: pixelAgent.teamName || null,
       endReason: pixelAgent.endReason || null,
-      source: 'pixel-agent-desk'
+      source: safeStr(pixelAgent.source)
     },
     timing: {
       elapsed: calculateElapsedTime(pixelAgent),
