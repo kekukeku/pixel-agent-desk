@@ -46,6 +46,13 @@ For JSON output:
 npm run diagnose:integrations -- --json
 ```
 
+### Debug log locations
+
+- **From source (`npm start`)**: `src/debug.log`
+- **Packaged app (macOS)**: `~/Library/Application Support/pixel-agent-desk/debug.log`
+- **Packaged app (Windows)**: `%APPDATA%/pixel-agent-desk/debug.log`
+- **Packaged app (Linux)**: `~/.config/pixel-agent-desk/debug.log`
+
 ---
 
 ## 3. Reading the Capability Report
@@ -94,7 +101,7 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 **Smoke test**:
 1. Open a Claude Code session in any project.
 2. Trigger a prompt or tool (e.g. `Bash: ls`).
-3. Verify in `debug.log`: `[Hook] ← PreToolUse`, then `[Processor] ← agent.working`.
+3. Verify in `debug.log` (see §2): `[Hook] ← PreToolUse`, then `[Processor] ← agent.working`.
 4. PAD GUI should show a Claude Code character with the project name.
 
 **Naming**: Character name is the project directory basename.
@@ -112,7 +119,7 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 **Smoke test**:
 1. Open a Codex session.
 2. Wait for PAD observer poll (every 2s).
-3. Verify `debug.log`: `[Processor] ← agent.started`.
+3. Verify `debug.log` (see §2): `[Processor] ← agent.started`.
 4. Trigger a tool/command (e.g. `ExecuteCommand`).
 5. Verify state changes: working → thinking → idle.
 
@@ -150,7 +157,7 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 **Smoke test**:
 1. Open an Antigravity session.
 2. Trigger a tool.
-3. Verify `debug.log`: `[Event] ← agent.working` with `source: antigravity`.
+3. Verify `debug.log` (see §2): `[Event] ← agent.working` with `source: antigravity`.
 
 **Key design**:
 - Lifecycle events (PreInvocation, Stop): bare command, no matcher.
@@ -208,8 +215,11 @@ Packaged builds also materialize runtime files under:
 
 Grok and Antigravity hook commands should point to `runtime/forwarders/` in packaged validation, not to repo `src/forwarders/`.
 
+### Q: How do I remove PAD integrations?
+A: See [README.md § Removing PAD Integrations](../README.md#removing-pad-integrations). In short: delete the PAD-owned hook/plugin file or key for each agent; Codex needs no cleanup.
+
 ### Q: A character doesn't appear. What should I check first?
-A: Check `src/debug.log`:
+A: Check `debug.log` (see §2):
 1. Look for `[IntegrationManager]` capability report — are all adapters registered?
 2. Look for `[Processor] ← agent.started` — did the event reach PAD?
 3. For Codex: check `[CodexObserver]` lines — is the observer scanning sessions?
@@ -251,4 +261,4 @@ echo '{"hookEventName":"SessionStart","sessionId":"packaged-smoke-grok","workspa
     "$HOME/.pixel-agent-desk/runtime/forwarders/grok-forwarder.js" SessionStart
 ```
 
-Both commands should exit `0`, avoid stdout/stderr noise, and produce `[Processor]` events in PAD logs.
+Both commands should exit `0`, avoid stdout/stderr noise, and produce `[Processor]` events in `debug.log` (see §2).
