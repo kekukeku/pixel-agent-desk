@@ -19,63 +19,30 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
-
-function shellQuote(p) {
-  return '"' + p.replace(/"/g, '\\"') + '"';
-}
+const { getHookRunnerCommand, getForwardersCacheDir, shellQuote } = require('./integrations/assetResolver');
 
 function _resolvePaths(options) {
   const opts = options || {};
   const homeDir = opts.homeDir || os.homedir();
   const configDir = path.join(homeDir, '.gemini', 'config');
   const hooksPath = path.join(configDir, 'hooks.json');
-  const forwarderPath = opts.forwarderPath || path.join(__dirname, '..', 'forwarders', 'antigravity-forwarder.js');
+  const forwarderPath = opts.forwarderPath || path.join(getForwardersCacheDir(opts), 'antigravity-forwarder.js');
   return { homeDir, configDir, hooksPath, forwarderPath };
 }
 
 function buildHookConfig(forwarderPath) {
-  const quoted = shellQuote(forwarderPath);
+  const preInvocationCmd = getHookRunnerCommand(forwarderPath, 'PreInvocation');
+  const preToolUseCmd = getHookRunnerCommand(forwarderPath, 'PreToolUse');
+  const postToolUseCmd = getHookRunnerCommand(forwarderPath, 'PostToolUse');
+  const stopCmd = getHookRunnerCommand(forwarderPath, 'Stop');
+
   return {
     pixelAgentDesk: {
       enabled: true,
-      PreInvocation: [
-        {
-          type: 'command',
-          command: `node ${quoted} PreInvocation`,
-          timeout: 10,
-        },
-      ],
-      PreToolUse: [
-        {
-          matcher: '*',
-          hooks: [
-            {
-              type: 'command',
-              command: `node ${quoted} PreToolUse`,
-              timeout: 10,
-            },
-          ],
-        },
-      ],
-      PostToolUse: [
-        {
-          matcher: '*',
-          hooks: [
-            {
-              type: 'command',
-              command: `node ${quoted} PostToolUse`,
-              timeout: 10,
-            },
-          ],
-        },
-      ],
-      Stop: [
-        {
-          type: 'command',
-          command: `node ${quoted} Stop`,
-          timeout: 10,
-        },
-      ],
+      PreInvocation: [{ type: 'command', command: preInvocationCmd, timeout: 10 }],
+      PreToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: preToolUseCmd, timeout: 10 }] }],
+      PostToolUse: [{ matcher: '*', hooks: [{ type: 'command', command: postToolUseCmd, timeout: 10 }] }],
+      Stop: [{ type: 'command', command: stopCmd, timeout: 10 }],
     },
   };
 }

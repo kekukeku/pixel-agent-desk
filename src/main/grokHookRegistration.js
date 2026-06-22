@@ -14,13 +14,14 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getHookRunnerCommand, getForwardersCacheDir } = require('./integrations/assetResolver');
 
 function _resolvePaths(options) {
   const opts = options || {};
   const homeDir = opts.homeDir || os.homedir();
   const hooksDir = path.join(homeDir, '.grok', 'hooks');
   const targetPath = path.join(hooksDir, 'pixel-agent-desk.json');
-  const forwarderPath = opts.forwarderPath || path.join(__dirname, '..', 'forwarders', 'grok-forwarder.js');
+  const forwarderPath = opts.forwarderPath || path.join(getForwardersCacheDir(opts), 'grok-forwarder.js');
   return { homeDir, hooksDir, targetPath, forwarderPath };
 }
 
@@ -45,7 +46,7 @@ function buildHookJson(forwarderPath) {
         hooks: [
           {
             type: 'command',
-            command: `node ${forwarderPath} ${eventName}`,
+            command: getHookRunnerCommand(forwarderPath, eventName),
             timeout: 5,
           },
         ],

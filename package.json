@@ -53,6 +53,11 @@
       "dashboard.html",
       "package.json"
     ],
+    "asarUnpack": [
+      "src/forwarders/**",
+      "src/main/adapters/**",
+      "src/adapters/opencode-plugin.js"
+    ],
     "win": {
       "target": [
         {

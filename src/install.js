@@ -20,7 +20,7 @@ function runInstall(options) {
   const debugLog = opts.debugLog || (function () {});
   const appConfig = opts.appConfig || getAppConfig();
 
-  integrationManager.init({ debugLog });
+  integrationManager.init({ debugLog, homeDir });
 
   integrationManager.registerDefaultAdapters({
     appConfig,

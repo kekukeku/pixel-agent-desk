@@ -14,13 +14,14 @@
 const fs = require('fs');
 const path = require('path');
 const os = require('os');
+const { getPluginsCacheDir } = require('./integrations/assetResolver');
 
 function _resolvePaths(options) {
   const opts = options || {};
   const homeDir = opts.homeDir || os.homedir();
   const pluginsDir = path.join(homeDir, '.config', 'opencode', 'plugins');
   const targetPath = path.join(pluginsDir, 'pad-adapter.js');
-  const sourcePath = opts.sourcePath || path.join(__dirname, '..', 'adapters', 'opencode-plugin.js');
+  const sourcePath = opts.sourcePath || path.join(getPluginsCacheDir(opts), 'opencode-plugin.js');
   return { homeDir, pluginsDir, targetPath, sourcePath };
 }
 

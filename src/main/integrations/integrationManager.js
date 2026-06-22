@@ -13,6 +13,10 @@ let debugLog = () => {};
 
 function init(deps) {
   debugLog = deps.debugLog || (() => {});
+
+  // Materialize forwarder/plugin assets to ~/.pixel-agent-desk/ on every startup
+  const { materializeAssets } = require('./assetResolver');
+  materializeAssets({ debugLog, homeDir: deps.homeDir });
 }
 
 function registerAdapter(adapter) {
