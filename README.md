@@ -1,18 +1,30 @@
 # Pixel Agent Desk
 
-[![CI](https://github.com/Mgpixelart/pixel-agent-desk/actions/workflows/test.yml/badge.svg)](https://github.com/Mgpixelart/pixel-agent-desk/actions/workflows/test.yml)
+[![CI](https://github.com/kekukeku/pixel-agent-desk/actions/workflows/test.yml/badge.svg)](https://github.com/kekukeku/pixel-agent-desk/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-42+-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
 
 > A real-time pixel office for your AI coding agents.
+> 
+> Fork of [Mgpixelart/pixel-agent-desk](https://github.com/Mgpixelart/pixel-agent-desk), maintained independently with extended integrations and dashboard features.
 
-Pixel Agent Desk is a standalone Electron app that watches agent lifecycle events and renders active AI sessions as animated pixel characters in a 2D office. It supports five major agent platforms out of the box:
+## Of Guardians in the Machine
 
-- **Claude Code**
+In the elder tales, no maker worked alone. Each hand at the bench, each eye bent over parchment, was said to be attended by unseen guardians: patient spirits who kept watch at the edge of labour, turning small perils aside before they could break the spell of creation.
+
+The age has changed its lanterns. Parchment has become glass, the scriptorium a glowing terminal, and the faithful companions of the workbench now move in bodies of pixel and code. Pixel Agent Desk gives those companions a room of their own: a little office where your AI coding agents may be seen at their stations, thinking, working, resting, and keeping vigil over the craft in progress.
+
+Open the desk, and let the invisible become visible. When the office fills with five bright guardians or more, perhaps the old promise still holds: that the wish held in that very breath may find its way into form.
+
+*[Read the full prelude](docs/readme-prelude.md) — Of Guardians in the Machine*
+
+Pixel Agent Desk is a standalone Electron app that watches agent lifecycle events and renders active AI sessions as animated pixel characters in a 2D office. It supports five major agent workspaces out of the box:
+
+- **Claude Cowork**
 - **Codex**
 - **Grok Build**
 - **Antigravity**
-- **OpenWork / OpenCode**
+- **OpenWork**
 
 The app is an observer and visualization layer. It does not dispatch work, assign tasks, or control your agents.
 
@@ -25,107 +37,93 @@ The app is an observer and visualization layer. It does not dispatch work, assig
 
 ## Highlights
 
-- **Pixel Avatars** - Each agent session gets a sprite character with state-driven animations.
-- **Virtual Office** - A 2D pixel art office where characters idle, think, and work.
-- **System Roster** - Live cards for active agents, tools, status, source, and metered usage when available.
-- **Five-Agent Integration** - Claude Code, Codex, Grok Build, Antigravity, and OpenWork / OpenCode.
-- **Packaged Runtime Hooks** - Packaged builds materialize forwarders into `~/.pixel-agent-desk/runtime/` and run them through the app executable.
-- **Activity and Usage Views** - Session activity, heatmaps, and token/cost analytics when providers expose token data.
-- **Auto Recovery** - Active sessions can be restored after app restart when recovery is safe (for example, Claude sessions with a verified PID, or custom sessions listed in `name-map.json` / `watcher-allowlist.json`).
-- **Generic Event API** - Custom tools can POST normalized agent events into the same office.
+- **Standalone Observer** — PAD runs independently as an observer for GUI and TUI agent workspaces.
+- **Pixel Office** — A 2D virtual office where active agents appear as animated pixel characters driven by lifecycle events.
+- **System Roster** — Live dashboard cards displaying agent status, active tools, sources, token usage, and metered cost when available.
+- **Five Optional Integrations** — Claude Cowork, Codex, Grok Build, Antigravity, and OpenWork, with OpenCode compatibility through the OpenWork core.
+- **Token & Cost Analytics** — Shows token visibility for supported agents except Antigravity, and estimates cost only when reliable pricing data is available.
+- **Activity Mesh & GroupChat Review** — Access historical session playbacks and visual heatmap activity matrices.
+- **Generic Event API** — Custom external tools can post normalized events via `POST /events/agent`.
+- **Auto Recovery** — Safely restores active agent sessions on app restart using verified PIDs or allowance configs.
 
 ## Requirements
 
-For source/development use:
-
+**To run Pixel Agent Desk:**
 - **Node.js** 20 or later
 - **npm**
 - **macOS, Windows, or Linux**
 
-For the packaged app, launch the installed app directly. Hook forwarders in packaged mode use the Pixel Agent Desk executable with `ELECTRON_RUN_AS_NODE=1`, so Grok and Antigravity hooks do not depend on a globally available `node` binary.
-
-Each agent integration is optional. Pixel Agent Desk will report missing platforms without failing startup.
+*Note: Agent workspaces are **not** requirements to run the app. Pixel Agent Desk works as an independent observer. Missing platforms will be reported in diagnostics but will never crash or block the dashboard.*
 
 ## Quick Start
 
-### From Source
+### macOS — Desktop Startup (Recommended)
+
+1. **First-Time Setup**: Run `npm install` once in the repository root to install dependencies. You can also double-click [`Install.command`](Install.command) to perform this step automatically.
+2. **Launch the Dashboard**: Double-click [`Start.command`](Start.command) in the repository root directory. This sets up local paths and runs the application window.
+   - *Note: `Start.command` prepends `$HOME/.local/node/bin` to your PATH. Ensure Node.js 20+ is installed there, or use the source startup flow below.*
+   - *Gatekeeper Note: If macOS blocks execution, right-click `Start.command` and select "Open", or run `chmod +x Start.command` in your terminal.*
+
+### All Platforms — Source Startup
+
+To clone and run from source manually:
 
 ```bash
-git clone https://github.com/Mgpixelart/pixel-agent-desk.git
+git clone https://github.com/kekukeku/pixel-agent-desk.git
 cd pixel-agent-desk
 npm install
 npm start
 ```
 
-`npm start` opens the Pixel Agent Desk dashboard window. It also starts the local event server on `127.0.0.1:47821`, registers configured hooks/plugins, and starts the Codex observer.
-
-On macOS, you can also double-click [`Start.command`](Start.command) in the repo root. It runs `npm start` for you (Node.js must be available on your PATH).
-
-### Packaged App
-
-Build a local packaged app:
-
-```bash
-npm run dist:mac
-```
-
-Then open:
-
-```text
-release/mac/Pixel Agent Desk.app
-```
-
-Do not run `npm start` at the same time when validating packaged hooks. Only one Pixel Agent Desk instance should own the local event server.
+On launch:
+- The Pixel Agent Desk dashboard window opens (showing `{username}'s Office` dynamically matching your OS account profile).
+- The local event gateway server starts listening on `127.0.0.1:47821`.
+- Configured observers and forwarder integrations register and prepare to receive agent events.
 
 ### Diagnostics
 
-Run a read-only integration report:
+To inspect the detection status of your local agent integrations without writing any configuration hooks or starting observers:
 
 ```bash
 npm run diagnose:integrations
 ```
 
-Running diagnostics never writes hook config and never starts observers. Codex may show `active=false` here even though it becomes `active=true` during `npm start`.
+## Dashboard Views
+
+The sidebar navigation provides four primary view modes for monitoring and exploring your agent sessions:
+
+| View | Purpose | Details |
+|---|---|---|
+| **Overview** | Main 2D office canvas & Live Roster | View animated pixel sprites moving and working, alongside real-time agent status cards. Supports PiP (Picture-in-Picture) window. |
+| **Activity Mesh** | Interactive heatmap matrix | Displays daily/hourly event frequency and peaks. |
+| **GroupChat Review** | Local session replay | Replays recorded multi-agent discussions (`groupchat_*.json`) directly on the 2D visual office canvas. |
+| **Metered API Usage** | Token & billing usage dashboard | Displays token counts for supported agents, estimated costs when pricing is reliable, and peak context window usage (CTX%) for Grok Build. |
 
 ## Integrations
 
-| Agent | Mechanism | Config / Data Path | Writes Config? |
-|---|---|---|---|
-| Claude Code | HTTP hooks | `~/.claude/settings.json` | Yes |
-| Codex | Read-only JSONL observer | `~/.codex/sessions/` | No |
-| Grok Build | Command-hook forwarder | `~/.grok/hooks/pixel-agent-desk.json` | Yes |
-| Antigravity | Command-hook forwarder | `~/.gemini/config/hooks.json` | Yes |
-| OpenWork / OpenCode | OpenCode plugin | `~/.config/opencode/plugins/pad-adapter.js` | Yes |
+| Agent | Mechanism | Config / Data Path | Writes Config? | Notes |
+|---|---|---|---|---|
+| Claude Cowork | Event forwarder | `~/.claude/settings.json` | Yes | Automatically registers PAD-owned hooks; migrates legacy HTTP hooks if present |
+| Codex | Read-only JSONL observer | `~/.codex/sessions/` | No | Scans session files every ~2s |
+| Grok Build | Event forwarder + observer | `~/.grok/hooks/pixel-agent-desk.json` + `~/.grok/sessions/**/signals.json` | Yes | Hook manages lifecycle; observer tracks tokens and CTX% |
+| Antigravity | Event forwarder | `~/.gemini/config/hooks.json` | Yes | Integrates forwarder executable directly |
+| OpenWork / OpenCode | OpenCode-compatible plugin | `~/.config/opencode/plugins/pad-adapter.js` | Yes | OpenWork is supported through its OpenCode-compatible core |
 
-The packaged app also materializes runtime helper files here:
+In packaged builds, helper files are materialized under `~/.pixel-agent-desk/runtime/` to execute forwarders via the Electron binary using `ELECTRON_RUN_AS_NODE=1`. In source development mode, forwarders run directly from the repository source folder.
 
-```text
-~/.pixel-agent-desk/runtime/
-  forwarders/
-    grok-forwarder.js
-    antigravity-forwarder.js
-  main/adapters/
-    grokHookAdapter.js
-    antigravityHookAdapter.js
-  adapters/
-    opencode-plugin.js
-```
+See [docs/integration-smoke-test.md](docs/integration-smoke-test.md) for a comprehensive integration test guide.
 
-See [docs/integration-smoke-test.md](docs/integration-smoke-test.md) for a complete smoke-test guide.
+*Important Note: If no agents are active, an **empty virtual office** is normal and does not mean PAD is failing. Animated characters appear only after their respective agents send at least one event (e.g. opening a supported workspace or sending a prompt).*
 
-Characters appear only after an agent sends at least one lifecycle event. Start the agent CLI or IDE extension once (for example, open a Codex thread or send a Grok prompt) so Pixel Agent Desk can detect and display it.
-
-## Removing PAD Integrations
-
-To disconnect Pixel Agent Desk from your agent tools, remove only the PAD-owned entries:
+To disconnect Pixel Agent Desk integrations, remove only the PAD-owned hook/plugin configs or keys:
 
 | Agent | What to remove |
 |---|---|
-| Claude Code | Remove PAD HTTP hook entries from `~/.claude/settings.json` (your other Claude settings stay intact) |
+| Claude Cowork | Remove PAD-owned hook entries from `~/.claude/settings.json` |
 | Grok Build | Delete `~/.grok/hooks/pixel-agent-desk.json` |
 | Antigravity | Remove the `"pixel-agent-desk"` key from `~/.gemini/config/hooks.json` |
 | OpenWork / OpenCode | Delete `~/.config/opencode/plugins/pad-adapter.js` |
-| Codex | No config writes — quitting PAD is enough |
+| Codex | No configuration is written — simply quit PAD to disconnect |
 
 Optional cache (safe to delete; PAD recreates it on next launch):
 
@@ -133,7 +131,7 @@ Optional cache (safe to delete; PAD recreates it on next launch):
 ~/.pixel-agent-desk/runtime/
 ```
 
-Restart the affected agent after removal so it reloads hook or plugin config.
+Restart the affected agent workspace after modification to reload the configurations.
 
 ## Configuration
 
@@ -160,7 +158,7 @@ Example:
 
 Current config gates:
 
-- `integrations.claude.enabled: false` skips Claude hook registration and Claude transcript scanning.
+- `integrations.claude.enabled: false` skips Claude Cowork hook registration and transcript scanning.
 - `integrations.opencode.enabled: false` skips OpenCode plugin registration.
 
 Other integrations are capability-detected and fail open if their platform is not installed.
@@ -192,6 +190,12 @@ Example:
     "input_tokens": 1200,
     "cached_input_tokens": 500,
     "output_tokens": 400
+  },
+  "context_usage": {
+    "kind": "snapshot",
+    "tokens_used": 50000,
+    "window_tokens": 200000,
+    "percent": 25
   },
   "metadata": {}
 }
@@ -238,15 +242,30 @@ The value maps stable agent IDs to avatar indices. Selecting "Reset to Default" 
 
 ## Token and Cost Display
 
-When an agent reports token usage, Pixel Agent Desk displays usage and estimated cost based on [src/pricing.js](src/pricing.js).
+Pixel Agent Desk displays resource usage depending on the data provided by the agent:
 
-Agents that do not expose reliable metered usage show:
+- **Token-visible agents**: Claude Cowork, Codex, Grok Build, and OpenWork/OpenCode can display token usage when their local event or session data exposes it.
+- **Cost-aware agents**: When token usage can be matched to reliable pricing in [src/pricing.js](src/pricing.js), Pixel Agent Desk estimates cost. Otherwise it shows usage without inventing a billing number.
+- **Context-aware agents (e.g. Grok Build)**: Displays peak context window percentage (`CTX: N tok` or percentage pressure). Context snapshot values are not accumulated. The daily heatmap records the daily peak context tokens.
+- **Antigravity**: Lifecycle visibility is supported, but token detection is not currently available.
 
-- `Usage unavailable`
-- `Cost: N/A`
-- disabled context window indicators
+See [docs/integration-smoke-test.md](docs/integration-smoke-test.md) §5.3 for Grok CTX verification.
 
-This avoids misleading zero-cost displays for subscription or TUI-based agents.
+*Note: Ensure `npm start` is closed when validating packaged hooks, as only one PAD instance can bind to the local event server port (`47821`).*
+
+## Advanced: Packaged Build
+
+While running from source is recommended, you can build a standalone packaged app locally:
+
+```bash
+npm run dist:mac
+```
+
+Then launch:
+
+```text
+release/mac/Pixel Agent Desk.app
+```
 
 ## Debug Log
 
@@ -264,11 +283,12 @@ Look for `[Processor]` and `[Event]` lines when verifying that agent events are 
 | Symptom | Likely Cause | Fix |
 |---|---|---|
 | No characters appear | No agent event has reached PAD yet | Start an agent session once, then check `debug.log` (see Debug Log above) for `[Processor]` lines |
+| Empty office (no characters) | Normal state on startup or inactive sessions | Animated characters appear only after their agents send at least one event (e.g. open a supported workspace or send a prompt). Confirm `debug.log` has `[Processor]` events. |
 | Diagnostics says Codex `active=false` | Diagnostics is read-only and does not start observers | Use `npm start`; Codex should become active if installed |
 | Grok or Antigravity does not appear in packaged app | Hook command still points to an old source path | Restart the packaged app so hooks are refreshed; inspect hook config for `~/.pixel-agent-desk/runtime/forwarders/` |
 | Hook command uses `node` in packaged validation | Hook config was generated by the dev app or old version | Close dev PAD, open packaged `.app`, then re-check hook config |
 | OpenCode does not appear | Plugin was not installed or OpenCode has not loaded it | Check `~/.config/opencode/plugins/pad-adapter.js`, then restart OpenCode/OpenWork |
-| Claude does not appear | Claude hooks missing or disabled | Run `npm run diagnose:integrations` and inspect `~/.claude/settings.json` |
+| Claude Cowork does not appear | Claude Cowork hooks missing or disabled | Run `npm run diagnose:integrations` and inspect `~/.claude/settings.json` |
 | A stale character remains | Persisted session recovery still has a matching ID | Remove stale entries from `name-map.json` or `watcher-allowlist.json`, then restart |
 
 ## Development Commands
