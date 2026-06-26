@@ -8,9 +8,9 @@ Pixel Agent Desk supports five AI agent platforms. This guide documents how to v
 
 | Adapter | Mechanism | Config File | Event Ingest | Observer/Start |
 |---|---|---|---|---|
-| **Claude Code** | Legacy HTTP hook | `~/.claude/settings.json` | POST `/hook` | Event-driven (hook) |
-| **Codex** | Read-only observer | `~/.codex/sessions/` | `POST /events/agent` (from observer) | Polling every 2s |
-| **Grok Build** | Command-hook forwarder | `~/.grok/hooks/pixel-agent-desk.json` | `POST /events/agent` (from forwarder) | Event-driven (hook) |
+| **Claude Code** | Command-hook forwarder | `~/.claude/settings.json` | POST `/hook` | Event-driven (hook) |
+| **Codex** | Read-only observer | `~/.codex/` | `POST /events/agent` (from observer) | Polling every 2s |
+| **Grok Build** | Command-hook forwarder + signals.json observer | `~/.grok/hooks/pixel-agent-desk.json` | `POST /events/agent` (from forwarder) | Event-driven (hook) + Polling observer |
 | **Antigravity** | Command-hook forwarder | `~/.gemini/config/hooks.json` | `POST /events/agent` (from forwarder) | Event-driven (hook) |
 | **OpenWork / OpenCode** | OpenCode plugin | `~/.config/opencode/plugins/pad-adapter.js` | `POST /events/agent` (from plugin) | Event-driven (plugin) |
 
@@ -33,9 +33,9 @@ Config:
   - opencode enabled=true
 
 [IntegrationManager] 5 adapters registered. Capability report:
-  - Claude Code: installed=true integrated=true active=false setupMode=legacy-http-hook
+  - Claude Code: installed=true integrated=true active=false setupMode=command-hook
   - Codex: installed=true integrated=true active=false setupMode=read-only-observer
-  - Grok Build: installed=true integrated=true active=false setupMode=command-hook
+  - Grok Build: installed=true integrated=true active=false setupMode=command-hook+observer
   - Antigravity: installed=true integrated=true active=false setupMode=command-hook
   - OpenWork / OpenCode: installed=true integrated=true active=false setupMode=opencode-plugin
 ```
@@ -84,9 +84,9 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 
 | Agent | installed | integrated | active (diagnostics) | active (npm start) | setupMode |
 |---|---|---|---|---|---|
-| Claude Code | true | true | false | false | legacy-http-hook |
+| Claude Code | true | true | false | false | command-hook |
 | Codex | true | true | false | **true** | read-only-observer |
-| Grok Build | true | true | false | false | command-hook |
+| Grok Build | true | true | false | false | command-hook+observer |
 | Antigravity | true | true | false | false | command-hook |
 | OpenWork / OpenCode | true | true | false | false | opencode-plugin |
 
@@ -140,6 +140,8 @@ This means **Codex `active=false` in diagnostics is expected** — the diagnosti
 1. Open a Grok Build session.
 2. Trigger a tool (e.g. `Read`, `Bash`).
 3. PAD receives events via the forwarder → `POST /events/agent`.
+4. With PAD running, confirm **Context** shows `~N%` on the agent card (from `signals.json` observer).
+5. Confirm **Tokens/Cost** show `—` / `N/A` (context-only; not metered billing).
 
 **Key design**:
 - Uses **command hooks**, NOT HTTP localhost hooks (avoids Grok's HTTPS requirement).
@@ -262,3 +264,8 @@ echo '{"hookEventName":"SessionStart","sessionId":"packaged-smoke-grok","workspa
 ```
 
 Both commands should exit `0`, avoid stdout/stderr noise, and produce `[Processor]` events in `debug.log` (see §2).
+
+**Grok context observer (packaged)**:
+1. Ensure a Grok session exists in `active_sessions.json` and PAD already shows the agent (hook path above).
+2. Verify `~/.grok/sessions/**/<session-id>/signals.json` updates while the session runs.
+3. Within ~3s, Dashboard should show `contextAvailable: true`, `usageAvailable: false`, and `tokenUsage.contextPercent` matching `contextWindowUsage`.

@@ -1,5 +1,7 @@
 # Pixel Agent Desk
 
+[中文](readme-i18n/readme_zh-tw.md) [日本語](readme-i18n/readme_ja.md) [한국어](readme-i18n/readme_ko.md) [Tiếng Việt](readme-i18n/readme_vi.md) [Bahasa Indonesia](readme-i18n/readme_id.md) [Español](readme-i18n/readme_es.md) [Français](readme-i18n/readme_fr.md) [Русский](readme-i18n/readme_ru.md)
+
 [![CI](https://github.com/kekukeku/pixel-agent-desk/actions/workflows/test.yml/badge.svg)](https://github.com/kekukeku/pixel-agent-desk/actions/workflows/test.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Electron](https://img.shields.io/badge/Electron-42+-47848F?logo=electron&logoColor=white)](https://www.electronjs.org/)
@@ -49,9 +51,7 @@ The app is an observer and visualization layer. It does not dispatch work, assig
 ## Requirements
 
 **To run Pixel Agent Desk:**
-- **Node.js** 20 or later
-- **npm**
-- **macOS, Windows, or Linux**
+- **macOS (recommended):** no separate Node install required — [`Install.command`](Install.command) downloads portable Node.js 22 to `~/.local/node` on first run.
 
 *Note: Agent workspaces are **not** requirements to run the app. Pixel Agent Desk works as an independent observer. Missing platforms will be reported in diagnostics but will never crash or block the dashboard.*
 
@@ -59,10 +59,14 @@ The app is an observer and visualization layer. It does not dispatch work, assig
 
 ### macOS — Desktop Startup (Recommended)
 
-1. **First-Time Setup**: Run `npm install` once in the repository root to install dependencies. You can also double-click [`Install.command`](Install.command) to perform this step automatically.
-2. **Launch the Dashboard**: Double-click [`Start.command`](Start.command) in the repository root directory. This sets up local paths and runs the application window.
-   - *Note: `Start.command` prepends `$HOME/.local/node/bin` to your PATH. Ensure Node.js 20+ is installed there, or use the source startup flow below.*
-   - *Gatekeeper Note: If macOS blocks execution, right-click `Start.command` and select "Open", or run `chmod +x Start.command` in your terminal.*
+1. **First-Time Setup**: Double-click [`Install.command`](Install.command) in the repository root.
+   - Downloads official Node.js binaries to `~/.local/node` if you do not already have Node 20+.
+   - Runs `npm install` for Pixel Agent Desk dependencies.
+   - Requires network access on first run.
+2. **Launch the Dashboard**: Double-click [`Start.command`](Start.command).
+   - Uses the same Node.js (`~/.local/node` or an existing system Node 20+).
+   - Opens the dashboard window via `npm start`.
+   - *Gatekeeper Note: If macOS blocks execution, right-click the `.command` file and select **Open**, or run `chmod +x Install.command Start.command` in Terminal.*
 
 ### All Platforms — Source Startup
 
@@ -104,7 +108,7 @@ The sidebar navigation provides four primary view modes for monitoring and explo
 | Agent | Mechanism | Config / Data Path | Writes Config? | Notes |
 |---|---|---|---|---|
 | Claude Cowork | Event forwarder | `~/.claude/settings.json` | Yes | Automatically registers PAD-owned hooks; migrates legacy HTTP hooks if present |
-| Codex | Read-only JSONL observer | `~/.codex/sessions/` | No | Scans session files every ~2s |
+| Codex | Read-only JSONL observer | `~/.codex/` | No | Scans session files every ~2s |
 | Grok Build | Event forwarder + observer | `~/.grok/hooks/pixel-agent-desk.json` + `~/.grok/sessions/**/signals.json` | Yes | Hook manages lifecycle; observer tracks tokens and CTX% |
 | Antigravity | Event forwarder | `~/.gemini/config/hooks.json` | Yes | Integrates forwarder executable directly |
 | OpenWork / OpenCode | OpenCode-compatible plugin | `~/.config/opencode/plugins/pad-adapter.js` | Yes | OpenWork is supported through its OpenCode-compatible core |
