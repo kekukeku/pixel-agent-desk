@@ -14,14 +14,18 @@ const { HOOK_EVENTS } = require('../src/main/hookRegistration');
 
 describe('claudeIntegration', () => {
   let tempDir;
+  let forwarderFile;
   let adapter;
   let debugLog;
 
   beforeEach(() => {
     tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'pad-claude-int-'));
+    forwarderFile = path.join(tempDir, 'claude-forwarder.js');
+    fs.writeFileSync(forwarderFile, '// forwarder stub', 'utf-8');
     debugLog = jest.fn();
     adapter = createClaudeIntegration({
       homeDir: tempDir,
+      forwarderPath: forwarderFile,
       debugLog,
     });
   });
@@ -39,7 +43,7 @@ describe('claudeIntegration', () => {
       expect(adapter).toMatchObject({
         id: 'claude-code',
         label: 'Claude Code',
-        setupMode: 'legacy-http-hook',
+        setupMode: 'command-hook',
       });
       expect(typeof adapter.detectInstalled).toBe('function');
       expect(typeof adapter.detectIntegrated).toBe('function');
@@ -59,12 +63,6 @@ describe('claudeIntegration', () => {
       fs.mkdirSync(path.join(tempDir, '.claude'), { recursive: true });
       expect(adapter.detectInstalled()).toBe(true);
     });
-
-    test('returns true when settings.json exists', () => {
-      fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
-      fs.writeFileSync(settingsPath(), '{}', 'utf-8');
-      expect(adapter.detectInstalled()).toBe(true);
-    });
   });
 
   describe('detectIntegrated', () => {
@@ -79,7 +77,7 @@ describe('claudeIntegration', () => {
   });
 
   describe('ensureIntegration', () => {
-    test('installs hooks and returns installed status', () => {
+    test('installs command hooks and returns installed status', () => {
       const result = adapter.ensureIntegration();
 
       expect(result).toEqual({ status: 'installed' });
@@ -90,10 +88,41 @@ describe('claudeIntegration', () => {
         expect(config.hooks[event]).toEqual([
           {
             matcher: '*',
-            hooks: [{ type: 'http', url: 'http://localhost:47821/hook' }],
+            hooks: [{
+              type: 'command',
+              command: expect.stringContaining(forwarderFile),
+              timeout: 5,
+            }],
           },
         ]);
       }
+    });
+
+    test('migrates legacy HTTP hooks to command hooks', () => {
+      fs.mkdirSync(path.dirname(settingsPath()), { recursive: true });
+      const legacy = { hooks: {} };
+      for (const event of HOOK_EVENTS) {
+        legacy.hooks[event] = [{
+          matcher: '*',
+          hooks: [{ type: 'http', url: 'http://localhost:47821/hook' }],
+        }];
+      }
+      fs.writeFileSync(settingsPath(), JSON.stringify(legacy), 'utf-8');
+
+      const result = adapter.ensureIntegration();
+
+      expect(result.status).toBe('installed');
+      const config = JSON.parse(fs.readFileSync(settingsPath(), 'utf-8'));
+      expect(
+        config.hooks.SessionStart.some(
+          entry => entry.hooks.some(h => h.type === 'http' && h.url === 'http://localhost:47821/hook')
+        )
+      ).toBe(false);
+      expect(
+        config.hooks.SessionStart.some(
+          entry => entry.hooks.some(h => h.type === 'command')
+        )
+      ).toBe(true);
     });
 
     test('returns installed when already up-to-date', () => {
@@ -124,10 +153,6 @@ describe('claudeIntegration', () => {
       expect(config.hooks.SessionStart).toContainEqual({
         matcher: '*',
         hooks: [{ type: 'http', url: 'http://localhost:9999/custom' }],
-      });
-      expect(config.hooks.SessionStart).toContainEqual({
-        matcher: '*',
-        hooks: [{ type: 'http', url: 'http://localhost:47821/hook' }],
       });
     });
 

@@ -39,11 +39,37 @@ describe('opencodeIntegration', () => {
     return path.join(tempDir, '.config', 'opencode', 'plugins', 'pad-adapter.js');
   }
 
+  function openWorkRoot() {
+    return path.join(tempDir, 'Library', '.opencode');
+  }
+
+  function openWorkPluginTargetPath() {
+    return path.join(openWorkRoot(), 'plugins', 'pad-adapter.js');
+  }
+
+  function opencodeConfigPath() {
+    return path.join(tempDir, '.config', 'opencode', 'opencode.json');
+  }
+
+  function openWorkConfigPath() {
+    return path.join(openWorkRoot(), 'openwork.json');
+  }
+
+  function seedOpenCodeEnvironment() {
+    fs.mkdirSync(path.dirname(opencodeConfigPath()), { recursive: true });
+    fs.writeFileSync(opencodeConfigPath(), JSON.stringify({ plugin: [] }), 'utf-8');
+  }
+
+  function seedOpenWorkEnvironment() {
+    fs.mkdirSync(openWorkRoot(), { recursive: true });
+    fs.writeFileSync(openWorkConfigPath(), JSON.stringify({ version: 1, plugin: [] }), 'utf-8');
+  }
+
   describe('interface', () => {
     test('exports required adapter fields', () => {
       expect(adapter).toMatchObject({
         id: 'opencode',
-        label: 'OpenWork / OpenCode',
+        label: 'OpenWork',
         setupMode: 'opencode-plugin',
       });
       expect(typeof adapter.detectInstalled).toBe('function');
@@ -77,6 +103,12 @@ describe('opencodeIntegration', () => {
 
       expect(adapter.detectInstalled()).toBe(true);
     });
+
+    test('returns true when OpenWork opencode directory is present', () => {
+      fs.mkdirSync(openWorkRoot(), { recursive: true });
+
+      expect(adapter.detectInstalled()).toBe(true);
+    });
   });
 
   describe('detectIntegrated', () => {
@@ -86,13 +118,25 @@ describe('opencodeIntegration', () => {
     });
 
     test('returns true after ensureIntegration installs the plugin', () => {
+      seedOpenCodeEnvironment();
       adapter.ensureIntegration();
       expect(adapter.detectIntegrated()).toBe(true);
+    });
+
+    test('returns true after ensureIntegration installs OpenWork plugin', () => {
+      seedOpenCodeEnvironment();
+      seedOpenWorkEnvironment();
+
+      adapter.ensureIntegration();
+
+      expect(adapter.detectIntegrated()).toBe(true);
+      expect(fs.existsSync(openWorkPluginTargetPath())).toBe(true);
     });
   });
 
   describe('ensureIntegration', () => {
     test('installs plugin and returns installed status', () => {
+      seedOpenCodeEnvironment();
       expect(fs.existsSync(pluginTargetPath())).toBe(false);
 
       const result = adapter.ensureIntegration();
@@ -101,7 +145,19 @@ describe('opencodeIntegration', () => {
       expect(fs.existsSync(pluginTargetPath())).toBe(true);
     });
 
+    test('installs plugin into OpenWork directory when available', () => {
+      seedOpenCodeEnvironment();
+      seedOpenWorkEnvironment();
+
+      const result = adapter.ensureIntegration();
+
+      expect(result).toEqual({ status: 'installed' });
+      expect(fs.existsSync(pluginTargetPath())).toBe(true);
+      expect(fs.existsSync(openWorkPluginTargetPath())).toBe(true);
+    });
+
     test('returns installed when plugin already installed and identical', () => {
+      seedOpenCodeEnvironment();
       adapter.ensureIntegration();
 
       const result = adapter.ensureIntegration();
@@ -110,6 +166,7 @@ describe('opencodeIntegration', () => {
     });
 
     test('returns failed when source path is missing', () => {
+      seedOpenCodeEnvironment();
       fs.unlinkSync(sourcePath);
 
       const result = adapter.ensureIntegration();
@@ -146,6 +203,7 @@ describe('opencodeIntegration', () => {
 
   describe('integration flow', () => {
     test('full lifecycle: not integrated → ensure → integrated → start → health', () => {
+      seedOpenCodeEnvironment();
       expect(adapter.detectIntegrated()).toBe(false);
 
       const ensured = adapter.ensureIntegration();

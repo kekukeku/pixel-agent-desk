@@ -49,6 +49,19 @@ const agentEventSchema = {
       },
       additionalProperties: true
     },
+    context_usage: {
+      type: 'object',
+      properties: {
+        kind: { type: 'string', enum: ['snapshot'] },
+        tokens_used: { type: 'number' },
+        window_tokens: { type: 'number' },
+        percent: { type: 'number' },
+        total_before_compaction: { type: 'number' }
+      },
+      additionalProperties: false
+    },
+    activity_text: { type: 'string' },
+    public_activity_text: { type: 'string' },
     metadata: { type: 'object' }
   },
   additionalProperties: true

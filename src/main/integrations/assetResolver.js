@@ -96,6 +96,7 @@ function materializeAssets(options) {
 
   const assets = [
     { src: 'src/forwarders/grok-forwarder.js', label: 'grok forwarder' },
+    { src: 'src/forwarders/claude-forwarder.js', label: 'claude forwarder' },
     { src: 'src/forwarders/antigravity-forwarder.js', label: 'antigravity forwarder' },
     { src: 'src/main/adapters/grokHookAdapter.js', label: 'grok adapter' },
     { src: 'src/main/adapters/antigravityHookAdapter.js', label: 'antigravity adapter' },

@@ -186,7 +186,7 @@ describe('codexObserverAdapter', () => {
 
       expect(result.event).toBe('agent.started');
       expect(result.agent_id).toBe('desktop-s1');
-      expect(result.name).toBe('desktop-app');
+      expect(result.name).toBe('Codex');
       expect(result.project_path).toBe('/projects/desktop-app');
     });
 
@@ -210,6 +210,29 @@ describe('codexObserverAdapter', () => {
       expect(result.tool).toBe('exec_command');
       expect(result.name).toBe('Desktop Thread');
     });
+
+    test('Codex Desktop response_item function_call ignores tool execution id (starts with fc_) and uses fallback session id', () => {
+      const result = mapCodexRecordToAgentEvent(
+        {
+          type: 'response_item',
+          payload: {
+            type: 'function_call',
+            id: 'fc_08b7a89f274c9e37016a369e5a41fc8191b0cb75c5c304129b',
+            name: 'exec_command',
+          },
+        },
+        {
+          fallbackSessionId: 'desktop-s2',
+          sessionMetaMap: new Map([['desktop-s2', { cwd: '/app', thread_name: 'Desktop Thread' }]]),
+        }
+      );
+
+      expect(result.event).toBe('agent.working');
+      expect(result.agent_id).toBe('desktop-s2');
+      expect(result.tool).toBe('exec_command');
+      expect(result.name).toBe('Desktop Thread');
+    });
+
 
     test('function_call emits agent.working', () => {
       const result = mapCodexRecordToAgentEvent(
@@ -286,12 +309,12 @@ describe('codexObserverAdapter', () => {
       expect(name).toBe('IndexTitle');
     });
 
-    test('falls back to cwd basename', () => {
+    test('does not fall back to cwd basename', () => {
       const name = resolveDisplayName(
         { cwd: '/projects/my-app' },
         null
       );
-      expect(name).toBe('my-app');
+      expect(name).toBe('Codex');
     });
 
     test('falls back to Codex', () => {

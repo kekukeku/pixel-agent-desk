@@ -13,6 +13,7 @@ let agentManager = null;
 let sessionPids = null;
 let debugLog = console.log;
 let detectClaudePidByTranscript = () => {};
+let onContextUsage = null;
 
 const pendingSessionStarts = [];
 
@@ -50,6 +51,39 @@ function init(deps) {
   sessionPids = deps.sessionPids;
   debugLog = deps.debugLog || console.log;
   detectClaudePidByTranscript = deps.detectClaudePidByTranscript || (() => {});
+  if (deps.onContextUsage) onContextUsage = deps.onContextUsage;
+}
+
+function applyContextUsage(agent, data) {
+  const cu = data.context_usage;
+  if (!cu || cu.kind !== 'snapshot') return null;
+
+  const contextUsage = {
+    kind: 'snapshot',
+    tokensUsed: cu.tokens_used || 0,
+    windowTokens: cu.window_tokens || 0,
+    percent: cu.percent != null ? cu.percent : 0,
+    totalBeforeCompaction: cu.total_before_compaction || 0,
+    available: true,
+  };
+
+  const tokenUsage = {
+    inputTokens: agent.tokenUsage?.inputTokens || 0,
+    outputTokens: agent.tokenUsage?.outputTokens || 0,
+    estimatedCost: agent.tokenUsage?.estimatedCost || 0,
+    usageAvailable: false,
+    contextPercent: contextUsage.percent,
+  };
+
+  return {
+    contextUsage,
+    tokenUsage,
+    model: data.model || agent.model || null,
+  };
+}
+
+function isContextOnlyEvent(data) {
+  return data.context_usage?.kind === 'snapshot' && !!data.metadata?.context_only;
 }
 
 function computeTokenUsage(agent, tokenUsage) {
@@ -88,6 +122,37 @@ function processAgentEvent(rawEvent, updateChannel = 'processor') {
   const timestamp = data.timestamp;
 
   debugLog(`[Processor] ← ${event} agent=${agentId.slice(0, 8)}`);
+
+  // Context-only Grok updates must not auto-create agents or change lifecycle.
+  if (isContextOnlyEvent(data)) {
+    const existing = agentManager ? agentManager.getAgent(agentId) : null;
+    if (!existing) {
+      return;
+    }
+    const ctx = applyContextUsage(existing, data);
+    if (ctx) {
+      agentManager.updateAgent({
+        ...existing,
+        ...ctx,
+        lastActivity: timestamp,
+      }, updateChannel);
+
+      if (onContextUsage && ctx.contextUsage?.tokensUsed > 0) {
+        try {
+          onContextUsage({
+            agentId,
+            source: data.source || existing.source,
+            model: ctx.model || existing.model,
+            tokensUsed: ctx.contextUsage.tokensUsed,
+            projectPath: data.project_path || existing.projectPath,
+          });
+        } catch (e) {
+          debugLog(`[Processor] onContextUsage failed: ${e.message}`);
+        }
+      }
+    }
+    return;
+  }
 
   // Ensure agent exists on any event other than started/removed
   if (agentManager && event !== 'agent.started' && event !== 'agent.removed') {
@@ -128,10 +193,12 @@ function processAgentEvent(rawEvent, updateChannel = 'processor') {
     case 'agent.error': {
       const agent = agentManager ? agentManager.getAgent(agentId) : null;
       if (agentManager && agent) {
+        const pubText = pickPublicActivityText(data);
         agentManager.updateAgent({
           ...agent,
           state: 'Error',
           currentTool: data.tool || null,
+          ...(pubText && { publicActivityText: pubText }),
           lastActivity: timestamp
         }, updateChannel);
       }
@@ -140,10 +207,12 @@ function processAgentEvent(rawEvent, updateChannel = 'processor') {
     case 'agent.help': {
       const agent = agentManager ? agentManager.getAgent(agentId) : null;
       if (agentManager && agent) {
+        const pubText = pickPublicActivityText(data);
         agentManager.updateAgent({
           ...agent,
           state: 'Help',
           currentTool: data.tool || null,
+          ...(pubText && { publicActivityText: pubText }),
           lastActivity: timestamp
         }, updateChannel);
       }
@@ -164,7 +233,9 @@ function handleAgentStarted(data, updateChannel = 'processor') {
   const existing = agentManager.getAgent(agentId);
   const isSubagent = !!data.parent_id;
   const isTeammate = !!(data.metadata?.isTeammate || data.metadata?.teammate_name);
-  const name = data.name || (data.project_path ? path.basename(data.project_path) : 'Agent');
+  const name = data.source === 'codex'
+    ? 'Codex'
+    : (data.name || (data.project_path ? path.basename(data.project_path) : 'Agent'));
 
   const updatePayload = {
     sessionId: agentId,
@@ -249,11 +320,13 @@ function handleAgentThinking(data, updateChannel = 'processor') {
       tokenUsage = computeTokenUsage(agent, data.token_usage);
     }
 
+    const pubText = pickPublicActivityText(data);
     const shouldResetFirstSeen = !!data.metadata?.reset_first_seen;
     agentManager.updateAgent({
       ...agent,
       state: 'Thinking',
       currentTool: null,
+      ...(pubText && { publicActivityText: pubText }),
       lastActivity: data.timestamp,
       ...(shouldResetFirstSeen && { firstSeen: data.timestamp }),
       ...(tokenUsage && { tokenUsage })
@@ -266,10 +339,12 @@ function handleAgentWorking(data, updateChannel = 'processor') {
   if (!agentManager) return;
   const agent = agentManager.getAgent(agentId);
   if (agent) {
+    const pubText = pickPublicActivityText(data);
     agentManager.updateAgent({
       ...agent,
       state: 'Working',
       currentTool: data.tool || null,
+      ...(pubText && { publicActivityText: pubText }),
       lastActivity: data.timestamp
     }, updateChannel);
   }
@@ -285,6 +360,7 @@ function handleAgentIdle(data, updateChannel = 'processor') {
       ...agent,
       state: 'Waiting',
       currentTool: null,
+      publicActivityText: null,
       lastActivity: data.timestamp,
       ...(isTeammate && {
         isTeammate,
@@ -300,11 +376,18 @@ function handleAgentDone(data, updateChannel = 'processor') {
   if (!agentManager) return;
   const agent = agentManager.getAgent(agentId);
   if (agent) {
+    const lastMsg = data.metadata?.last_assistant_message || null;
+    // Bridge lastMessage as publicActivityText if available (capped at 60 chars)
+    const bridgeText = lastMsg
+      ? (String(lastMsg).length > 60 ? String(lastMsg).slice(0, 57) + '...' : String(lastMsg))
+      : null;
+
     agentManager.updateAgent({
       ...agent,
       state: 'Done',
       currentTool: null,
-      lastMessage: data.metadata?.last_assistant_message || null,
+      publicActivityText: bridgeText || null,
+      lastMessage: lastMsg,
       lastActivity: data.timestamp
     }, updateChannel);
   }
@@ -315,6 +398,13 @@ function flushPendingStarts() {
     const data = pendingSessionStarts.shift();
     handleAgentStarted(data);
   }
+}
+
+function pickPublicActivityText(data) {
+  return data.public_activity_text ||
+    data.activity_text ||
+    (data.metadata && (data.metadata.public_activity_text || data.metadata.activity_text)) ||
+    null;
 }
 
 function cleanup() {

@@ -12,7 +12,8 @@ var officePathfinder = {
 
   async init(bgW, bgH) {
     const TILE = OFFICE.TILE_SIZE;
-    const img = await loadOfficeImage('/public/office/map/office_collision.webp?t=' + Date.now());
+    const mapFolder = localStorage.getItem('officeMapFolder') || 'map';
+    const img = await loadOfficeImage(`/public/office/${mapFolder}/office_collision.webp?t=` + Date.now());
     const canvas = document.createElement('canvas');
     canvas.width = img.naturalWidth;
     canvas.height = img.naturalHeight;

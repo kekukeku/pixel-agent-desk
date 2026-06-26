@@ -35,6 +35,11 @@ describe('runInstall', () => {
     sourcePath = path.join(pluginSourceDir, 'opencode-plugin.js');
     fs.writeFileSync(sourcePath, '// plugin stub', 'utf-8');
     debugLog = jest.fn();
+
+    // Seed OpenCode environment
+    const opencodeConfigDir = path.join(tempDir, '.config', 'opencode');
+    fs.mkdirSync(opencodeConfigDir, { recursive: true });
+    fs.writeFileSync(path.join(opencodeConfigDir, 'opencode.json'), JSON.stringify({ plugin: [] }), 'utf-8');
   });
 
   afterEach(() => {

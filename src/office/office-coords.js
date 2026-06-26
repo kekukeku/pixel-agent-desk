@@ -12,7 +12,8 @@ var officeCoords = {
 };
 
 async function parseMapCoordinates(bgW, bgH) {
-  const img = await loadOfficeImage('/public/office/map/office_xy.webp?t=' + Date.now());
+  const mapFolder = localStorage.getItem('officeMapFolder') || 'map';
+  const img = await loadOfficeImage(`/public/office/${mapFolder}/office_xy.webp?t=` + Date.now());
   const canvas = document.createElement('canvas');
   canvas.width = img.naturalWidth;
   canvas.height = img.naturalHeight;

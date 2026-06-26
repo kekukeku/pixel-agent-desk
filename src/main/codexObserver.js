@@ -20,6 +20,7 @@ const {
   parseChatProcesses,
   mapCodexRecordToAgentEvent,
   resolveDisplayName,
+  getSessionId,
 } = require('./adapters/codexObserverAdapter');
 
 function createCodexObserver(options) {
@@ -36,6 +37,7 @@ function createCodexObserver(options) {
   const pollIntervalMs = opts.pollIntervalMs || 2000;
   const quietMs = opts.quietMs || 60000;
   const staleMs = opts.staleMs || 600000;
+  const chatProcessFreshMs = opts.chatProcessFreshMs || 2 * 60 * 1000;
   const replayExisting = opts.replayExisting !== false;
 
   let pollTimer = null;
@@ -138,7 +140,7 @@ function createCodexObserver(options) {
         event: 'agent.started',
         agent_id: agentId,
         source: 'codex',
-        name: path.basename(root) || 'Codex',
+        name: 'Codex',
         project_path: root,
         timestamp: now,
         metadata: {
@@ -175,6 +177,23 @@ function createCodexObserver(options) {
     const match = base.match(/([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})$/i);
     if (match) return match[1];
     return path.basename(path.dirname(filePath));
+  }
+
+  function isPidAlive(pid) {
+    if (!pid || typeof pid !== 'number') return false;
+    try {
+      process.kill(pid, 0);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  function isFreshChatProcess(proc, now) {
+    if (isPidAlive(proc.pid)) return true;
+    const ts = proc.updatedAtMs || proc.startedAtMs || 0;
+    if (!ts) return false;
+    return now - ts <= chatProcessFreshMs;
   }
 
   function readNewLines(filePath, sessionId) {
@@ -230,8 +249,7 @@ function createCodexObserver(options) {
         const records = readNewLines(filePath, fallbackSessionId);
 
         for (const record of records) {
-          const payload = record && record.payload && typeof record.payload === 'object' ? record.payload : {};
-          const sid = record.session_id || record.sessionId || payload.id || payload.session_id || payload.sessionId || fallbackSessionId;
+          const sid = getSessionId(record, fallbackSessionId);
           const agentEvent = mapCodexRecordToAgentEvent(record, {
             sessionIndex,
             sessionMetaMap,  // persistent: survives across poll cycles
@@ -257,10 +275,16 @@ function createCodexObserver(options) {
         if (fs.existsSync(chatProcessesPath)) {
           const raw = fs.readFileSync(chatProcessesPath, 'utf-8');
           const processes = parseChatProcesses(raw);
+          const now = Date.now();
 
           for (const proc of processes) {
             const sid = proc.session_id;
             const ts = proc.updatedAtMs || proc.startedAtMs || Date.now();
+
+            // chat_processes.json is an activity ledger, not just live tools.
+            // Only recent entries (or still-live PIDs) should move Codex to
+            // Working, otherwise historical commands spawn stale avatars.
+            if (!isFreshChatProcess(proc, now)) continue;
 
             // Build a stable dedupe key without Date.now() for absent timestamps
             const dedupeKey = [
@@ -278,7 +302,6 @@ function createCodexObserver(options) {
             const indexEntry = sessionIndex.get(sid);
             let name = resolveDisplayName(meta, indexEntry);
             if (name === 'Codex' && proc.chatTitle) name = proc.chatTitle;
-            if (name === 'Codex' && proc.cwd) name = path.basename(proc.cwd);
 
             const projectPath = (meta && meta.cwd) || (indexEntry && indexEntry.cwd) || proc.cwd || '';
 

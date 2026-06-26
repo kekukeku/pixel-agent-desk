@@ -38,6 +38,24 @@ function drawOfficeSprite(ctx, agent) {
   const img = getOfficeSkinImage(agent.avatarFile);
   if (!img || !img.complete || img.naturalWidth === 0) return;
 
+  if (agent.agentState === 'playing') {
+    if (img && img.complete && img.naturalHeight > 0) {
+      const totalRows = Math.floor(img.naturalHeight / OFFICE.FRAME_H);
+      if (totalRows >= 9) {
+        const walking = agent.currentAnim && agent.currentAnim.startsWith('walk_');
+        const row = walking ? totalRows - 2 : totalRows - 1;
+        const col = agent.animFrame % OFFICE.COLS;
+        const sx = col * OFFICE.FRAME_W;
+        const sy = row * OFFICE.FRAME_H;
+        ctx.drawImage(img, sx, sy, OFFICE.FRAME_W, OFFICE.FRAME_H,
+          Math.round(agent.x - OFFICE.FRAME_W / 2),
+          Math.round(agent.y - OFFICE.FRAME_H),
+          OFFICE.FRAME_W, OFFICE.FRAME_H);
+        return;
+      }
+    }
+  }
+
   const frames = SPRITE_FRAMES[agent.currentAnim];
   if (!frames) return;
   const frameIdx = frames[agent.animFrame % frames.length];
@@ -59,6 +77,16 @@ function isIdleAnim(key) {
 }
 
 function tickOfficeAnimation(agent, deltaMs) {
+  if (agent.agentState === 'playing') {
+    const interval = OFFICE.ANIM_INTERVAL / 2;
+    agent.animTimer += deltaMs;
+    if (agent.animTimer >= interval) {
+      agent.animTimer -= interval;
+      agent.animFrame = (agent.animFrame + 1) % 8;
+    }
+    return;
+  }
+
   agent.animTimer += deltaMs;
   const interval = isIdleAnim(agent.currentAnim) ? OFFICE.IDLE_ANIM_INTERVAL : OFFICE.ANIM_INTERVAL;
   if (agent.animTimer >= interval) {

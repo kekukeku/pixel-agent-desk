@@ -4,7 +4,7 @@
  */
 
 const path = require('path');
-const { formatAgentSource, formatAgentStatus, formatAgentActivity, resolveAgentDisplayName, safeStr } = require('./agentDisplayFormat');
+const { formatAgentSource, formatAgentStatus, formatAgentActivity, resolveAgentDisplayName, resolveAgentName, resolveProjectLabel, resolveBubbleActivity, formatCommandText, safeStr } = require('./agentDisplayFormat');
 
 /**
  * State mapping from Pixel Agent Desk to Dashboard
@@ -15,7 +15,8 @@ const STATE_MAP = {
   'Done': 'completed',
   'Waiting': 'waiting',
   'Help': 'help',
-  'Error': 'error'
+  'Error': 'error',
+  'Playing': 'playing'
 };
 
 /**
@@ -38,9 +39,11 @@ function mapPixelStateToDashboardState(pixelState) {
  * @returns {string} Project name or 'Default'
  */
 function extractProjectName(projectPath) {
-  if (!projectPath) return 'Default';
+  if (!projectPath) return '';
   const normalized = projectPath.replace(/\\/g, '/');
-  return path.basename(normalized);
+  const base = path.basename(normalized);
+  if (!base || base === 'Default') return '';
+  return base;
 }
 
 /**
@@ -73,13 +76,8 @@ function isAgentActive(state) {
   return state === 'Working' || state === 'Thinking';
 }
 
-/**
- * Adapt a single Pixel Agent Desk agent to Dashboard format
- * @param {Object} pixelAgent - Pixel Agent Desk agent object
- * @returns {Object} Dashboard formatted agent
- */
-function adaptAgentToDashboard(pixelAgent) {
-  const hasUsage = !!(
+function hasMeteredUsage(pixelAgent) {
+  return !!(
     pixelAgent.tokenUsage && (
       pixelAgent.tokenUsage.usageAvailable ||
       pixelAgent.tokenUsage.inputTokens > 0 ||
@@ -87,17 +85,39 @@ function adaptAgentToDashboard(pixelAgent) {
       (pixelAgent.model && /^(claude|gpt|gemini)/i.test(pixelAgent.model))
     )
   );
+}
+
+function hasContextUsage(pixelAgent) {
+  if (!pixelAgent) return false;
+  if (pixelAgent.contextUsage?.available) return true;
+  if (hasMeteredUsage(pixelAgent)) return false;
+  const pct = pixelAgent.tokenUsage?.contextPercent;
+  return pct != null && pixelAgent.source === 'grok-build';
+}
+
+/**
+ * Adapt a single Pixel Agent Desk agent to Dashboard format
+ * @param {Object} pixelAgent - Pixel Agent Desk agent object
+ * @returns {Object} Dashboard formatted agent
+ */
+function adaptAgentToDashboard(pixelAgent, nameMap) {
+  const hasUsage = hasMeteredUsage(pixelAgent);
+  const hasContext = hasContextUsage(pixelAgent);
 
   return {
     id: pixelAgent.id || pixelAgent.sessionId,
     sessionId: pixelAgent.sessionId,
     name: resolveAgentDisplayName(pixelAgent),
+    agentName: resolveAgentName(pixelAgent, nameMap),
     project: extractProjectName(pixelAgent.projectPath),
+    projectLabel: resolveProjectLabel(pixelAgent),
     status: mapPixelStateToDashboardState(pixelAgent.state),
     type: determineAgentType(pixelAgent),
     model: pixelAgent.model || null,
     tokenUsage: pixelAgent.tokenUsage || { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
+    contextUsage: pixelAgent.contextUsage || null,
     usageAvailable: hasUsage,
+    contextAvailable: hasContext,
     currentTool: pixelAgent.currentTool || null,
     lastMessage: pixelAgent.lastMessage || null,
     avatarIndex: pixelAgent.avatarIndex !== undefined ? pixelAgent.avatarIndex : null,
@@ -105,6 +125,8 @@ function adaptAgentToDashboard(pixelAgent) {
     sourceLabel: formatAgentSource(pixelAgent.source),
     statusBadge: formatAgentStatus(pixelAgent.state),
     activityText: formatAgentActivity(pixelAgent.state, pixelAgent.currentTool),
+    publicActivityText: pixelAgent.publicActivityText || null,
+    commandText: formatCommandText(pixelAgent),
     metadata: {
       isSubagent: pixelAgent.isSubagent || false,
       isTeammate: pixelAgent.isTeammate || false,
@@ -127,6 +149,8 @@ module.exports = {
   adaptAgentToDashboard,
   mapPixelStateToDashboardState,
   extractProjectName,
+  hasMeteredUsage,
+  hasContextUsage,
   STATE_MAP,
   DEFAULT_STATE
 };

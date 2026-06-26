@@ -57,11 +57,12 @@ var officeCharacters = {
       agentState: officeState,
       restTimer: 0,
       bubble: null,
-      role: agentData.name || 'Agent',
+      role: agentData.agentName || agentData.name || 'Spirit',
       metadata: {
-        name: agentData.name || 'Agent',
-        project: agentData.project || '',
+        name: agentData.agentName || agentData.name || 'Spirit',
+        project: agentData.projectLabel !== undefined ? agentData.projectLabel : (agentData.project !== undefined ? agentData.project : ''),
         tool: agentData.currentTool || null,
+        publicActivityText: agentData.publicActivityText || null,
         type: agentData.type || 'main',
         status: agentData.status || 'idle',
         lastMessage: agentData.lastMessage || null,
@@ -81,30 +82,6 @@ var officeCharacters = {
   },
 
   updateCharacter: function (agentData) {
-    const isPlanning = agentData.status === 'working' && agentData.currentTool && agentData.currentTool.startsWith('Planning session ');
-    if (isPlanning) {
-      const sessionId = agentData.currentTool.substring('Planning session '.length).trim();
-      this.startGroupChatMeeting(sessionId);
-    }
-
-    if (this._meetingActive && this._meetingParticipants && this._meetingParticipants.includes(agentData.id)) {
-      let someonePlanning = false;
-      const self = this;
-      this._meetingParticipants.forEach(function (pid) {
-        const charObj = self.characters.get(pid);
-        if (charObj) {
-          const statusVal = (pid === agentData.id) ? agentData.status : charObj.metadata.status;
-          const toolVal = (pid === agentData.id) ? agentData.currentTool : charObj.metadata.tool;
-          if (statusVal === 'working' && toolVal && toolVal.startsWith('Planning session ') && !charObj._isTemporary) {
-            someonePlanning = true;
-          }
-        }
-      });
-      if (!someonePlanning) {
-        this.endGroupChatMeeting(this._meetingSessionId);
-      }
-    }
-
     const char = this.characters.get(agentData.id);
     if (!char) {
       this.addCharacter(agentData);
@@ -114,10 +91,15 @@ var officeCharacters = {
     const oldState = char.agentState;
     const newState = this._mapStatus(agentData.status);
     char.agentState = newState;
-    char.role = agentData.name || char.role;
-    char.metadata.name = agentData.name || char.metadata.name;
-    char.metadata.project = agentData.project || char.metadata.project;
+    char.role = agentData.agentName || agentData.name || char.role;
+    char.metadata.name = agentData.agentName || agentData.name || char.metadata.name;
+    char.metadata.project = agentData.projectLabel !== undefined
+      ? agentData.projectLabel
+      : (agentData.project !== undefined ? agentData.project : char.metadata.project);
     char.metadata.tool = agentData.currentTool || null;
+    char.metadata.publicActivityText = agentData.publicActivityText !== undefined
+      ? agentData.publicActivityText
+      : char.metadata.publicActivityText;
     char.metadata.status = agentData.status || 'idle';
     char.metadata.type = agentData.type || char.metadata.type;
     char.metadata.lastMessage = agentData.lastMessage || char.metadata.lastMessage;
@@ -190,33 +172,13 @@ var officeCharacters = {
 
   updateAll: function (deltaSec, deltaMs) {
     const self = this;
-    if (typeof window !== 'undefined' && window.__groupchatReplayActive) {
-      const chars = this.getCharacterArray();
-      chars.forEach(function (char) {
-        tickOfficeAnimation(char, deltaMs);
-      });
-      return;
-    }
+
+    // Refresh expired bubbles before rendering this frame
+    self.refreshBubbles();
+
     this.characters.forEach(function (char) {
-      const isParticipant = self._meetingActive && self._meetingParticipants && self._meetingParticipants.includes(char.id);
-      if (!isParticipant) {
-        self._updateTarget(char);
-        self._updateMovement(char, deltaSec);
-      } else {
-        char.path = [];
-        char.pathIndex = 0;
-        // Keep facing dir and idle anim during meeting
-        if (char.id === 'codex') {
-          char.facingDir = 'right';
-          char.currentAnim = 'right_idle';
-        } else if (char.id === 'grok-build') {
-          char.facingDir = 'down';
-          char.currentAnim = 'down_idle';
-        } else if (char.id === 'antigravity') {
-          char.facingDir = 'left';
-          char.currentAnim = 'left_idle';
-        }
-      }
+      self._updateTarget(char);
+      self._updateMovement(char, deltaSec);
       tickOfficeAnimation(char, deltaMs);
 
       // Working sparkles
@@ -305,6 +267,7 @@ var officeCharacters = {
   _updateMovement: function (char, deltaSec) {
     const isArrived = char.path.length === 0 || char.pathIndex >= char.path.length;
 
+    const speedMultiplier = char.agentState === 'playing' ? 2.0 : 1.0;
     if (isArrived) {
       // Apply seat config
       const allSpots = (officeCoords.desk || []).concat(officeCoords.idle || []);
@@ -360,7 +323,7 @@ var officeCharacters = {
       char.y = target.y;
       char.pathIndex++;
     } else {
-      const speed = OFFICE.MOVE_SPEED * deltaSec;
+      const speed = OFFICE.MOVE_SPEED * speedMultiplier * deltaSec;
       char.x += (dx / dist) * speed;
       char.y += (dy / dist) * speed;
       const dir = Math.abs(dx) > Math.abs(dy) ? (dx > 0 ? 'right' : 'left') : (dy > 0 ? 'down' : 'up');
@@ -378,33 +341,122 @@ var officeCharacters = {
       'done': 'done',
       'help': 'help',
       'error': 'error',
+      'playing': 'playing',
     };
     return map[dashboardStatus] || 'idle';
   },
 
-  _setBubble: function (char, agentData) {
+  _setBubble: function (char, agentData, fallbackKind) {
     let text = null;
     let icon = null;
-    const status = agentData.status || char.metadata.status;
+    let expiresAt = Infinity;
+    let kind = 'state';
 
-    if (status === 'working' && agentData.currentTool) {
-      text = agentData.currentTool;
+    const status = agentData.status || char.metadata.status;
+    const pubText = agentData.publicActivityText !== undefined
+      ? agentData.publicActivityText
+      : char.metadata.publicActivityText;
+    const tool = agentData.currentTool || char.metadata.tool;
+
+    if (fallbackKind === 'tool') {
+      // TTL expired — downgrade to tool fallback
+      if (tool) {
+        text = tool;
+        icon = null;
+        expiresAt = Infinity;
+        kind = 'tool';
+      } else {
+        // Tool also absent, go to state fallback
+        this._setBubble(char, agentData, 'state');
+        return;
+      }
+    } else if (fallbackKind === 'state') {
+      // Tool/activity absent, use state fallback
+      if (status === 'thinking') {
+        text = 'Thinking...';
+      } else if (status === 'working') {
+        text = 'Working...';
+      } else if (status === 'completed' || status === 'done') {
+        text = 'Done!';
+      } else if (status === 'help') {
+        text = 'Need help!';
+      } else if (status === 'error') {
+        text = 'Error!';
+      } else if (status === 'playing') {
+        text = 'Playing...';
+      }
+      // idle / waiting / unknown: clear bubble
+      if (!text) {
+        char.bubble = null;
+        return;
+      }
       icon = null;
-    } else if (status === 'thinking') {
-      text = 'Thinking...';
-    } else if (status === 'completed' || status === 'done') {
-      text = 'Done!';
-    } else if (status === 'help') {
-      text = 'Need help!';
-    } else if (status === 'error') {
-      text = 'Error!';
+      expiresAt = Infinity;
+      kind = 'state';
+    } else if (pubText && String(pubText).trim()) {
+      // Priority 1: public activity text (TTL 12s)
+      text = String(pubText).trim();
+      icon = null;
+      expiresAt = Date.now() + 12000;
+      kind = 'activity';
+    } else if (tool && String(tool).trim()) {
+      // Priority 2: current tool (persistent while active)
+      text = String(tool).trim();
+      icon = null;
+      expiresAt = Infinity;
+      kind = 'tool';
+    } else {
+      // Priority 3: state fallback
+      this._setBubble(char, agentData, 'state');
+      return;
     }
 
     if (text) {
-      // working/thinking/help/error states are displayed persistently while active
-      const isPersistent = (status === 'working' || status === 'thinking' || status === 'help' || status === 'error');
-      char.bubble = { text: text, icon: icon, expiresAt: isPersistent ? Infinity : Date.now() + 8000 };
+      char.bubble = { text: text, icon: icon, expiresAt: expiresAt, kind: kind };
     }
+  },
+
+  /**
+   * Refresh expired bubbles — downgrade to tool or state fallback.
+   * Called before rendering to ensure bubbles never go blank.
+   */
+  refreshBubbles: function () {
+    const now = Date.now();
+    this.characters.forEach(function (char) {
+      if (!char.bubble) return;
+      if (char.bubble.expiresAt > now) return; // still valid
+
+      // Expired: downgrade to lower priority
+      if (char.bubble.kind === 'activity') {
+        // Downgrade to tool fallback
+        if (char.metadata.tool) {
+          char.bubble = {
+            text: char.metadata.tool,
+            icon: null,
+            expiresAt: Infinity,
+            kind: 'tool'
+          };
+        } else {
+          // No tool, downgrade to state fallback
+          const status = char.metadata.status;
+          let text = null;
+          if (status === 'thinking') text = 'Thinking...';
+          else if (status === 'working') text = 'Working...';
+          else if (status === 'completed' || status === 'done') text = 'Done!';
+          else if (status === 'help') text = 'Need help!';
+          else if (status === 'error') text = 'Error!';
+          if (text) {
+            char.bubble = { text: text, icon: null, expiresAt: Infinity, kind: 'state' };
+          } else {
+            char.bubble = null;
+          }
+        }
+      }
+      // tool/state kind with Infinity never expires; if they do for some reason, clear
+      else {
+        char.bubble = null;
+      }
+    });
   },
 
   /** D6: Find an available idle coordinate near the desk area (for overflow agents) */
@@ -448,122 +500,7 @@ var officeCharacters = {
     return candidates[idHash % Math.min(candidates.length, 5)];
   },
 
-  _meetingActive: false,
-  _meetingSessionId: null,
-  _meetingParticipants: null,
-  _priorStates: null,
-
-  startGroupChatMeeting: function (sessionId, participants) {
-    if (this._meetingActive && this._meetingSessionId === sessionId) return;
-
-    this._meetingActive = true;
-    this._meetingSessionId = sessionId;
-    this._meetingParticipants = participants || ['codex', 'antigravity', 'grok-build'];
-    this._priorStates = {};
-
-    const self = this;
-    const seats = (typeof GROUPCHAT_REPLAY_SEATS !== 'undefined') ? GROUPCHAT_REPLAY_SEATS : {
-      codex: { x: 624, y: 480 },
-      'grok-build': { x: 656, y: 448 },
-      antigravity: { x: 688, y: 480 }
-    };
-
-    this._meetingParticipants.forEach(function (pid) {
-      let char = self.characters.get(pid);
-      if (!char) {
-        const nameMap = {
-          'codex': 'Codex',
-          'antigravity': 'Antigravity',
-          'grok-build': 'Grok Build'
-        };
-        const roleMap = {
-          'codex': 'planner',
-          'antigravity': 'executor',
-          'grok-build': 'reviewer'
-        };
-        const tempAgent = {
-          id: pid,
-          name: nameMap[pid] || pid,
-          status: 'working',
-          currentTool: 'Planning session ' + sessionId,
-          type: roleMap[pid] || 'main'
-        };
-        self.addCharacter(tempAgent);
-        char = self.characters.get(pid);
-        char._isTemporary = true;
-      }
-
-      self._priorStates[pid] = {
-        x: char.x,
-        y: char.y,
-        path: char.path ? Array.from(char.path) : [],
-        pathIndex: char.pathIndex || 0,
-        bubble: char.bubble ? { ...char.bubble } : null,
-        agentState: char.agentState,
-        deskIndex: char.deskIndex,
-        deskOverflow: char.deskOverflow
-      };
-
-      const seat = seats[pid] || { x: 624, y: 480 };
-      char.x = seat.x;
-      char.y = seat.y;
-      char.path = [];
-      char.pathIndex = 0;
-      char.agentState = 'working';
-      char.deskIndex = undefined;
-      char.deskOverflow = false;
-
-      if (pid === 'codex') {
-        char.facingDir = 'right';
-        char.currentAnim = 'right_idle';
-      } else if (pid === 'grok-build') {
-        char.facingDir = 'down';
-        char.currentAnim = 'down_idle';
-      } else if (pid === 'antigravity') {
-        char.facingDir = 'left';
-        char.currentAnim = 'left_idle';
-      }
-    });
-  },
-
-  endGroupChatMeeting: function (sessionId) {
-    if (!this._meetingActive) return;
-    if (sessionId && this._meetingSessionId !== sessionId) return;
-
-    const self = this;
-    const pids = this._meetingParticipants || [];
-
-    pids.forEach(function (pid) {
-      const char = self.characters.get(pid);
-      if (!char) return;
-
-      if (char._isTemporary) {
-        self.removeCharacter(pid);
-      } else {
-        const prior = self._priorStates[pid];
-        if (prior) {
-          char.x = prior.x;
-          char.y = prior.y;
-          char.path = prior.path;
-          char.pathIndex = prior.pathIndex;
-          char.bubble = prior.bubble;
-          char.agentState = prior.agentState;
-          char.deskIndex = prior.deskIndex;
-          char.deskOverflow = prior.deskOverflow;
-        }
-      }
-    });
-
-    this._meetingActive = false;
-    this._meetingSessionId = null;
-    this._meetingParticipants = null;
-    this._priorStates = null;
-  },
-
   getCharacterArray: function () {
-    if (typeof window !== 'undefined' && window.__groupchatReplayActive && window.__groupchatReplayCharacters) {
-      return window.__groupchatReplayCharacters;
-    }
     return Array.from(this.characters.values());
   },
 };

@@ -59,13 +59,17 @@ function getRecordType(record) {
 
 function getSessionId(record, fallbackSessionId) {
   const payload = getPayload(record);
+  let payloadId = payload.id;
+  if (payloadId && (typeof payloadId !== 'string' || payloadId.startsWith('fc_') || payloadId.startsWith('call_'))) {
+    payloadId = null;
+  }
   return record.session_id ||
     record.sessionId ||
     record.conversationId ||
     record.conversation_id ||
     payload.session_id ||
     payload.sessionId ||
-    payload.id ||
+    payloadId ||
     payload.conversationId ||
     payload.conversation_id ||
     fallbackSessionId ||
@@ -143,10 +147,6 @@ function resolveDisplayName(meta, indexEntry) {
   if (meta && meta.thread_name) return meta.thread_name;
   if (indexEntry && indexEntry.thread_name) return indexEntry.thread_name;
   if (indexEntry && indexEntry.title) return indexEntry.title;
-  if (meta && meta.cwd) {
-    const b = basename(meta.cwd);
-    if (b) return b;
-  }
   return 'Codex';
 }
 
@@ -332,4 +332,5 @@ module.exports = {
   parseSessionIndex,
   parseChatProcesses,
   resolveDisplayName,
+  getSessionId,
 };

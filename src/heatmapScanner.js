@@ -118,6 +118,55 @@ class HeatmapScanner {
     return result;
   }
 
+  /**
+   * Record context-window snapshot usage (Grok Build and other context-only sources).
+   * Uses per-agent daily peak so repeated polls do not double-count snapshots.
+   * @param {{ agentId: string, source?: string, model?: string, tokensUsed?: number, projectPath?: string }} payload
+   */
+  recordContextUsage(payload) {
+    const agentId = payload && payload.agentId;
+    const tokensUsed = Number(payload && payload.tokensUsed) || 0;
+    if (!agentId || tokensUsed <= 0) return;
+
+    const dateKey = new Date().toISOString().slice(0, 10);
+    this._ensureDay(dateKey);
+    const day = this.days[dateKey];
+
+    if (!day._contextPeak) day._contextPeak = {};
+    const prevPeak = day._contextPeak[agentId] || 0;
+    const delta = Math.max(0, tokensUsed - prevPeak);
+    if (delta === 0 && prevPeak > 0) return;
+
+    day._contextPeak[agentId] = Math.max(prevPeak, tokensUsed);
+    day.contextTokens = (day.contextTokens || 0) + delta;
+
+    if (!day._sessions.has(agentId)) {
+      day._sessions.add(agentId);
+      day.sessions++;
+    }
+
+    const modelKey = payload.model || payload.source || 'context-only';
+    if (!day.byModel[modelKey]) {
+      day.byModel[modelKey] = {
+        inputTokens: 0,
+        outputTokens: 0,
+        estimatedCost: 0,
+        contextTokens: 0,
+      };
+    }
+    day.byModel[modelKey].contextTokens = (day.byModel[modelKey].contextTokens || 0) + delta;
+
+    const projectName = payload.projectPath ? path.basename(String(payload.projectPath)) : null;
+    if (projectName && !day._projects.has(projectName)) {
+      day._projects.add(projectName);
+      day.projects.push(projectName);
+    }
+
+    this.lastScan = Date.now();
+    this._savePersisted();
+    this.debugLog(`[HeatmapScanner] Context +${delta} tok (${agentId.slice(0, 8)} → peak ${day._contextPeak[agentId]})`);
+  }
+
   // ─── Internal implementation ───
 
   /**
@@ -285,12 +334,14 @@ class HeatmapScanner {
         toolUses: 0,
         inputTokens: 0,
         outputTokens: 0,
+        contextTokens: 0,
         estimatedCost: 0,
         byModel: {},
         projects: [],
         // Internal tracking (excluded during serialization)
         _sessions: new Set(),
         _projects: new Set(),
+        _contextPeak: {},
       };
     }
   }
@@ -342,7 +393,10 @@ class HeatmapScanner {
       // Exclude _sessions and _projects Sets from serialization
       const serialDays = {};
       for (const [date, stats] of Object.entries(this.days)) {
-        const { _sessions, _projects, ...rest } = stats;
+        const { _sessions, _projects, _contextPeak, ...rest } = stats;
+        if (_contextPeak && Object.keys(_contextPeak).length > 0) {
+          rest.contextPeakByAgent = { ..._contextPeak };
+        }
         rest.estimatedCost = roundCost(rest.estimatedCost);
         // Round per-model costs
         if (rest.byModel) {
@@ -376,11 +430,14 @@ class HeatmapScanner {
 
       if (data.days) {
         for (const [date, stats] of Object.entries(data.days)) {
+          const { contextPeakByAgent, ...dayRest } = stats;
           this.days[date] = {
-            ...stats,
-            byModel: stats.byModel || {},
+            ...dayRest,
+            contextTokens: dayRest.contextTokens || 0,
+            byModel: dayRest.byModel || {},
             _sessions: new Set(),
-            _projects: new Set(stats.projects || []),
+            _projects: new Set(dayRest.projects || []),
+            _contextPeak: { ...(contextPeakByAgent || {}) },
           };
         }
       }

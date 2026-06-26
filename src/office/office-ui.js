@@ -17,9 +17,9 @@ function drawOfficeNameTag(ctx, agent) {
 
   const statusColor = STATE_COLORS[agent.agentState] || STATE_COLORS[agent.metadata.status] || '#94a3b8';
 
-  // Role label
+  // Role label (bottom black badge)
   ctx.font = 'bold 10px -apple-system, BlinkMacSystemFont, "Malgun Gothic", sans-serif';
-  let roleStr = agent.role || agent.metadata.name || 'Agent';
+  let roleStr = agent.role || agent.metadata.name || 'Spirit';
   if (roleStr.length > 20) roleStr = roleStr.slice(0, 19) + '...';
 
   const tw = ctx.measureText(roleStr).width;
@@ -41,28 +41,48 @@ function drawOfficeNameTag(ctx, agent) {
   ctx.fillStyle = '#f8fafc';
   ctx.fillText(roleStr, baseX, footY + OFFICE_UI_BASE_Y - 3);
 
-  // Status badge
-  const state = agent.agentState || 'idle';
-  const displayState = state === 'done' ? 'DONE' : state === 'idle' ? 'RESTING' : state.toUpperCase();
+  // Project badge (middle pill, replaces old status badge)
+  const projectLabel = agent.metadata.project || '';
+  if (projectLabel) {
+    ctx.font = 'bold 9.5px sans-serif';
 
-  ctx.font = 'bold 9.5px sans-serif';
-  const stateTw = ctx.measureText(displayState).width;
+    // Truncate long project names (character-based first, then fine-tune)
+    const maxProjectWidth = 140;
+    let projStr = projectLabel;
+    if (ctx.measureText(projStr).width > maxProjectWidth) {
+      while (projStr.length > 1 && ctx.measureText(projStr + '...').width > maxProjectWidth) {
+        projStr = projStr.slice(0, -1);
+      }
+      projStr += '...';
+    }
 
-  ctx.globalAlpha = 0.75;
-  ctx.fillStyle = statusColor;
-  const paddingX = 10;
-  const sBoxW = stateTw + paddingX * 2;
-  const sBoxH = 15;
-  const sBoxX = baseX - sBoxW / 2;
-  const sBoxY = roleBoxY - sBoxH - 5;
+    const projTw = ctx.measureText(projStr).width;
+    const paddingX = 12;
+    const pBoxW = projTw + paddingX * 2 + 6; // +6 for left bar
+    const pBoxH = 15;
+    const pBoxX = baseX - pBoxW / 2;
+    const pBoxY = roleBoxY - pBoxH - 5;
 
-  ctx.beginPath();
-  ctx.roundRect(sBoxX, sBoxY, sBoxW, sBoxH, sBoxH / 2);
-  ctx.fill();
+    // Project badge background (neutral dark)
+    ctx.globalAlpha = 0.85;
+    ctx.fillStyle = 'rgba(30, 41, 59, 0.9)';
+    ctx.beginPath();
+    ctx.roundRect(pBoxX, pBoxY, pBoxW, pBoxH, pBoxH / 2);
+    ctx.fill();
 
-  ctx.globalAlpha = 1.0;
-  ctx.fillStyle = '#ffffff';
-  ctx.fillText(displayState, baseX, sBoxY + sBoxH - 3);
+    // State-color left bar (2px)
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = statusColor;
+    ctx.beginPath();
+    ctx.roundRect(pBoxX + 3, pBoxY + 3, 2, pBoxH - 6, 1);
+    ctx.fill();
+
+    // Project text
+    ctx.globalAlpha = 1.0;
+    ctx.fillStyle = '#e2e8f0';
+    // Shift text right to account for the left bar
+    ctx.fillText(projStr, baseX + 3, pBoxY + pBoxH - 3);
+  }
 
   ctx.restore();
 }
@@ -70,7 +90,13 @@ function drawOfficeNameTag(ctx, agent) {
 function drawOfficeBubble(ctx, agent) {
   const now = Date.now();
   const baseX = Math.round(agent.x);
-  const bubbleY = Math.round(agent.y) + OFFICE_UI_BASE_Y - 45;
+  const footY = Math.round(agent.y);
+
+  // Adjust bubble Y: closer to name tag when project badge is hidden
+  const hasProject = !!(agent.metadata && agent.metadata.project);
+  const bubbleY = hasProject
+    ? footY + OFFICE_UI_BASE_Y - 45   // above project badge
+    : footY + OFFICE_UI_BASE_Y + 8;    // above name tag only
 
   ctx.save();
 
@@ -99,9 +125,8 @@ function drawOfficeBubble(ctx, agent) {
     const boxX = baseX - boxW / 2;
     const boxY = bubbleY - boxH;
 
-    const isReplay = (typeof window !== 'undefined' && window.__groupchatReplayActive);
-    const borderColor = isReplay ? '#000000' : 'rgba(203, 213, 225, 0.5)';
-    const bgColor = isReplay ? '#ffffff' : 'rgba(255, 255, 255, 0.95)';
+    const borderColor = 'rgba(203, 213, 225, 0.5)';
+    const bgColor = 'rgba(255, 255, 255, 0.95)';
     const textColor = '#000000';
 
     // Bubble background

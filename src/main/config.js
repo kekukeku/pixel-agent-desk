@@ -14,9 +14,12 @@ function getAppConfig() {
   const defaultConfig = {
     integrations: {
       claude: {
-        enabled: true
-      }
-    }
+        enabled: true,
+      },
+      opencode: {
+        enabled: true,
+      },
+    },
   };
 
   try {
@@ -26,9 +29,12 @@ function getAppConfig() {
       return {
         integrations: {
           claude: {
-            enabled: parsed?.integrations?.claude?.enabled !== false
-          }
-        }
+            enabled: parsed?.integrations?.claude?.enabled !== false,
+          },
+          opencode: {
+            enabled: parsed?.integrations?.opencode?.enabled !== false,
+          },
+        },
       };
     }
   } catch (e) {

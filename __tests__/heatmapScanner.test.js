@@ -272,6 +272,31 @@ describe('HeatmapScanner', () => {
     });
   });
 
+  describe('recordContextUsage', () => {
+    test('indexes context tokens with per-agent daily peak', () => {
+      const scanner = new HeatmapScanner();
+      scanner.recordContextUsage({
+        agentId: 'grok-sess-1',
+        source: 'grok-build',
+        model: 'grok-composer-2.5-fast',
+        tokensUsed: 50000,
+        projectPath: '/tmp/proj',
+      });
+      scanner.recordContextUsage({
+        agentId: 'grok-sess-1',
+        source: 'grok-build',
+        model: 'grok-composer-2.5-fast',
+        tokensUsed: 52000,
+      });
+
+      const dateKey = new Date().toISOString().slice(0, 10);
+      const day = scanner.getDailyStats().days[dateKey];
+      expect(day.contextTokens).toBe(52000);
+      expect(day.byModel['grok-composer-2.5-fast'].contextTokens).toBe(52000);
+      expect(day.sessions).toBe(1);
+    });
+  });
+
   describe('cost calculation', () => {
     test('uses model-specific pricing', async () => {
       const lines = [

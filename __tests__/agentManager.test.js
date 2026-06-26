@@ -1,15 +1,32 @@
-/**
- * P0-4: Test Coverage - agentManager.js Tests
- * AgentManager core logic tests
- */
-
 const AgentManager = require('../src/agentManager');
 const EventEmitter = require('events');
+const os = require('os');
+const fs = require('fs');
+const path = require('path');
 
 describe('AgentManager', () => {
   let manager;
+  const originalHomedir = os.homedir;
+  const testHomedir = path.join(__dirname, 'temp_home_global');
+
+  beforeAll(() => {
+    os.homedir = () => testHomedir;
+    if (fs.existsSync(testHomedir)) {
+      fs.rmSync(testHomedir, { recursive: true, force: true });
+    }
+  });
+
+  afterAll(() => {
+    os.homedir = originalHomedir;
+    if (fs.existsSync(testHomedir)) {
+      fs.rmSync(testHomedir, { recursive: true, force: true });
+    }
+  });
 
   beforeEach(() => {
+    if (fs.existsSync(testHomedir)) {
+      fs.rmSync(testHomedir, { recursive: true, force: true });
+    }
     manager = new AgentManager();
     manager.start();
   });
@@ -47,7 +64,7 @@ describe('AgentManager', () => {
       expect(result).not.toBeNull();
       expect(result.id).toBe('test-1');
       expect(result.state).toBe('Working');
-      expect(result.displayName).toBe('Test Agent');
+      expect(result.displayName).toBe('Spirit');
     });
 
     test('updates existing agent state', () => {
@@ -160,6 +177,78 @@ describe('AgentManager', () => {
     });
   });
 
+  describe('stale duplicate cleanup', () => {
+    test('removes older Antigravity duplicate with same display name and project', () => {
+      const projectPath = '/tmp/pixel-agent-desk';
+      manager.updateAgent({
+        sessionId: 'bb194259-bac6-475e-a1d8-8530dfc66398',
+        source: 'antigravity',
+        displayName: 'Antigravity',
+        projectPath,
+        state: 'Waiting',
+      });
+      manager.updateAgent({
+        sessionId: '95796e04-a1ff-4210-8541-cbb4907da8f7',
+        source: 'antigravity',
+        displayName: 'Antigravity',
+        projectPath,
+        state: 'Working',
+      });
+
+      expect(manager.getAgentCount()).toBe(1);
+      expect(manager.getAgent('95796e04-a1ff-4210-8541-cbb4907da8f7')).not.toBeNull();
+      expect(manager.getAgent('bb194259-bac6-475e-a1d8-8530dfc66398')).toBeNull();
+    });
+
+    test('removes debug Grok sessions when a real Grok UUID session updates', () => {
+      manager.updateAgent({
+        sessionId: 'direct-post-test',
+        source: 'grok-build',
+        displayName: 'Grok Test',
+        projectPath: '/tmp',
+        state: 'Waiting',
+      });
+      manager.updateAgent({
+        sessionId: 'proper-env-1782165387',
+        source: 'grok-build',
+        displayName: 'Grok Build',
+        projectPath: '/tmp/test',
+        state: 'Waiting',
+      });
+      manager.updateAgent({
+        sessionId: '019ee691-23a0-7c12-bdae-19616e1a5fc4',
+        source: 'grok-build',
+        displayName: 'Grok Build',
+        projectPath: '/tmp/pixel-agent-desk',
+        state: 'Working',
+      });
+
+      expect(manager.getAgentCount()).toBe(1);
+      expect(manager.getAgent('019ee691-23a0-7c12-bdae-19616e1a5fc4')).not.toBeNull();
+      expect(manager.getAgent('direct-post-test')).toBeNull();
+      expect(manager.getAgent('proper-env-1782165387')).toBeNull();
+    });
+
+    test('keeps Codex agents on different projects with the same display name', () => {
+      manager.updateAgent({
+        sessionId: 'codex-a',
+        source: 'codex',
+        displayName: 'Codex',
+        projectPath: '/tmp/project-a',
+        state: 'Waiting',
+      });
+      manager.updateAgent({
+        sessionId: 'codex-b',
+        source: 'codex',
+        displayName: 'Codex',
+        projectPath: '/tmp/project-b',
+        state: 'Working',
+      });
+
+      expect(manager.getAgentCount()).toBe(2);
+    });
+  });
+
   describe('removeAgent', () => {
     test('removes existing agent', () => {
       manager.updateAgent({ sessionId: 'remove-1', state: 'Working' });
@@ -250,7 +339,7 @@ describe('AgentManager', () => {
         slug: 'test-agent-name',
         state: 'Working'
       });
-      expect(agent.displayName).toBe('Test Agent Name');
+      expect(agent.displayName).toBe('Spirit');
     });
 
     test('uses projectPath basename when no slug', () => {
@@ -259,15 +348,36 @@ describe('AgentManager', () => {
         projectPath: '/path/to/my-project',
         state: 'Working'
       });
-      expect(agent.displayName).toBe('my-project');
+      expect(agent.displayName).toBe('Spirit');
     });
 
-    test('returns "Agent" when neither slug nor projectPath', () => {
+    test('uses Codex source label instead of projectPath basename', () => {
+      const agent = manager.updateAgent({
+        sessionId: 'display-codex',
+        projectPath: '/path/to/MAW',
+        state: 'Working',
+        source: 'codex'
+      });
+      expect(agent.displayName).toBe('Codex');
+    });
+
+    test('uses Grok Build source label instead of projectPath basename or slug', () => {
+      const agent = manager.updateAgent({
+        sessionId: 'display-grok',
+        projectPath: '/path/to/MAW',
+        slug: 'grok-slug',
+        state: 'Working',
+        source: 'grok-build'
+      });
+      expect(agent.displayName).toBe('Grok Build');
+    });
+
+    test('returns "Spirit" when no source and no manual name', () => {
       const agent = manager.updateAgent({
         sessionId: 'display-3',
         state: 'Working'
       });
-      expect(agent.displayName).toBe('Agent');
+      expect(agent.displayName).toBe('Spirit');
     });
   });
 
@@ -304,6 +414,7 @@ describe('AgentManager', () => {
       expect(stats.byState.Working).toBe(2);
       expect(stats.byState.Done).toBe(1);
       expect(stats.byState.Thinking).toBe(1);
+      expect(stats.byState.Playing).toBe(0);
     });
 
     test('returns zero counts for empty states', () => {
@@ -313,6 +424,121 @@ describe('AgentManager', () => {
       expect(stats.byState.Working).toBe(0);
       expect(stats.byState.Done).toBe(0);
       expect(stats.byState.Thinking).toBe(0);
+      expect(stats.byState.Playing).toBe(0);
+    });
+  });
+
+  describe('Playing state', () => {
+    let playingManager;
+
+    beforeEach(() => {
+      jest.useFakeTimers();
+      playingManager = new AgentManager();
+      playingManager.start();
+    });
+
+    afterEach(() => {
+      playingManager.stop();
+      jest.useRealTimers();
+    });
+
+    test('Waiting 60s transitions to Playing and emits agent-updated', () => {
+      const mockCallback = jest.fn();
+      playingManager.on('agent-updated', mockCallback);
+
+      playingManager.updateAgent({ sessionId: 'play-1', state: 'Waiting' });
+      expect(playingManager.getAgent('play-1').state).toBe('Waiting');
+
+      mockCallback.mockClear();
+
+      jest.advanceTimersByTime(61000);
+
+      const agent = playingManager.getAgent('play-1');
+      expect(agent.state).toBe('Playing');
+      expect(mockCallback).toHaveBeenCalled();
+    });
+
+    test('Repeated Waiting updates do not reset restingStartTime', () => {
+      playingManager.updateAgent({ sessionId: 'play-2', state: 'Waiting' });
+
+      jest.advanceTimersByTime(30000);
+      playingManager.updateAgent({ sessionId: 'play-2', state: 'Waiting' });
+
+      jest.advanceTimersByTime(31000);
+
+      expect(playingManager.getAgent('play-2').state).toBe('Playing');
+    });
+
+    test('Waiting 30s then Working clears restingStartTime, no Playing transition', () => {
+      playingManager.updateAgent({ sessionId: 'play-3', state: 'Waiting' });
+
+      jest.advanceTimersByTime(30000);
+      playingManager.updateAgent({ sessionId: 'play-3', state: 'Working' });
+
+      jest.advanceTimersByTime(40000);
+
+      expect(playingManager.getAgent('play-3').state).toBe('Working');
+    });
+
+    test('Help / Error do not transition to Playing', () => {
+      playingManager.updateAgent({ sessionId: 'play-4', state: 'Help' });
+      playingManager.updateAgent({ sessionId: 'play-5', state: 'Error' });
+
+      jest.advanceTimersByTime(61000);
+
+      expect(playingManager.getAgent('play-4').state).toBe('Help');
+      expect(playingManager.getAgent('play-5').state).toBe('Error');
+    });
+
+    test('Already Playing agent does not re-emit', () => {
+      playingManager.updateAgent({ sessionId: 'play-6', state: 'Waiting' });
+
+      jest.advanceTimersByTime(61000);
+      expect(playingManager.getAgent('play-6').state).toBe('Playing');
+
+      const spy = jest.fn();
+      playingManager.on('agent-updated', spy);
+
+      jest.advanceTimersByTime(6000);
+
+      expect(spy).not.toHaveBeenCalled();
+    });
+
+    test('Done 60s transitions to Playing', () => {
+      playingManager.updateAgent({ sessionId: 'play-7', state: 'Done' });
+
+      jest.advanceTimersByTime(61000);
+
+      expect(playingManager.getAgent('play-7').state).toBe('Playing');
+    });
+
+    test('stop clears playing interval', () => {
+      const clearIntervalSpy = jest.spyOn(global, 'clearInterval');
+
+      playingManager.stop();
+
+      expect(clearIntervalSpy).toHaveBeenCalled();
+      clearIntervalSpy.mockRestore();
+    });
+
+    test('Playing agent receives Working event and exits Playing', () => {
+      playingManager.updateAgent({ sessionId: 'play-8', state: 'Waiting' });
+
+      jest.advanceTimersByTime(61000);
+      expect(playingManager.getAgent('play-8').state).toBe('Playing');
+
+      playingManager.updateAgent({ sessionId: 'play-8', state: 'Working' });
+      expect(playingManager.getAgent('play-8').state).toBe('Working');
+    });
+
+    test('Playing agent receives Waiting heartbeat and stays Playing', () => {
+      playingManager.updateAgent({ sessionId: 'play-9', state: 'Waiting' });
+
+      jest.advanceTimersByTime(61000);
+      expect(playingManager.getAgent('play-9').state).toBe('Playing');
+
+      playingManager.updateAgent({ sessionId: 'play-9', state: 'Waiting' });
+      expect(playingManager.getAgent('play-9').state).toBe('Playing');
     });
   });
 
@@ -363,10 +589,10 @@ describe('AgentManager', () => {
       manager.updateAgentName('agent-y', 'Custom Y');
       
       const res = manager.updateAgentName('agent-y', '');
-      expect(res.displayName).toBe('Agent Y Slug');
+      expect(res.displayName).toBe('Spirit');
 
       const agent = manager.getAgent('agent-y');
-      expect(agent.displayName).toBe('Agent Y Slug');
+      expect(agent.displayName).toBe('Spirit');
 
       const mapPath = path.join(testHomedir, '.pixel-agent-desk', 'name-map.json');
       const content = JSON.parse(fs.readFileSync(mapPath, 'utf-8'));

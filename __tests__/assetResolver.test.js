@@ -70,8 +70,8 @@ describe('materializeAssets', () => {
   test('creates target folder and copies files', () => {
     const results = materializeAssets({ homeDir: tempDir, debugLog: jest.fn() });
 
-    // All five assets should be materialized
-    expect(results.length).toBe(5);
+    // All six assets should be materialized
+    expect(results.length).toBe(6);
     for (const r of results) {
       expect(r.ok).toBe(true);
     }
@@ -81,6 +81,7 @@ describe('materializeAssets', () => {
     const pluginsDir = getPluginsCacheDir({ homeDir: tempDir });
 
     expect(fs.existsSync(path.join(fwdDir, 'grok-forwarder.js'))).toBe(true);
+    expect(fs.existsSync(path.join(fwdDir, 'claude-forwarder.js'))).toBe(true);
     expect(fs.existsSync(path.join(fwdDir, 'antigravity-forwarder.js'))).toBe(true);
     expect(fs.existsSync(path.join(pluginsDir, 'opencode-plugin.js'))).toBe(true);
   });

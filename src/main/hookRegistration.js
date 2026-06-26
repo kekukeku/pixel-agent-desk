@@ -1,17 +1,25 @@
 /**
  * Claude CLI Hook Registration
- * Read/write/register HTTP hooks from Claude CLI config file
+ * Read/write/register command hooks from Claude CLI config file
  */
 
 const path = require('path');
 const os = require('os');
 const fs = require('fs');
+const { getHookRunnerCommand, getForwardersCacheDir } = require('./integrations/assetResolver');
 
 const HOOK_SERVER_PORT = 47821;
+const PAD_HTTP_HOOK_URL = `http://localhost:${HOOK_SERVER_PORT}/hook`;
+const PAD_FORWARDER_BASENAME = 'claude-forwarder.js';
 
 function getClaudeConfigPath(options) {
   const opts = options || {};
   return path.join(opts.homeDir || os.homedir(), '.claude', 'settings.json');
+}
+
+function getForwarderPath(options) {
+  const opts = options || {};
+  return opts.forwarderPath || path.join(getForwardersCacheDir(opts), PAD_FORWARDER_BASENAME);
 }
 
 function readClaudeConfig(debugLog, options) {
@@ -52,29 +60,86 @@ const HOOK_EVENTS = [
   'PreCompact'
 ];
 
-function hasOurHookInEntry(entry, hookUrl) {
-  return entry.hooks && entry.hooks.some(h => h.type === 'http' && h.url === hookUrl);
+function isPadHttpHook(hook) {
+  return hook && hook.type === 'http' && hook.url === PAD_HTTP_HOOK_URL;
+}
+
+function isPadCommandHook(hook, forwarderPath) {
+  if (!hook || hook.type !== 'command' || !hook.command) return false;
+  return hook.command.includes(PAD_FORWARDER_BASENAME)
+    || hook.command.includes(forwarderPath);
+}
+
+function hasOurCommandHookInEntry(entry, forwarderPath) {
+  return entry.hooks && entry.hooks.some(h => isPadCommandHook(h, forwarderPath));
+}
+
+function hasLegacyHttpHooks(config) {
+  if (!config.hooks) return false;
+  for (const entries of Object.values(config.hooks)) {
+    if (!Array.isArray(entries)) continue;
+    for (const entry of entries) {
+      if (entry.hooks && entry.hooks.some(isPadHttpHook)) return true;
+    }
+  }
+  return false;
+}
+
+function stripPadHooksFromConfig(config, forwarderPath) {
+  if (!config.hooks) return;
+
+  for (const event of Object.keys(config.hooks)) {
+    if (!Array.isArray(config.hooks[event])) continue;
+
+    config.hooks[event] = config.hooks[event]
+      .map(function (entry) {
+        if (!entry.hooks) return entry;
+        const remaining = entry.hooks.filter(function (hook) {
+          return !isPadHttpHook(hook) && !isPadCommandHook(hook, forwarderPath);
+        });
+        if (remaining.length === 0) return null;
+        return { ...entry, hooks: remaining };
+      })
+      .filter(Boolean);
+  }
+}
+
+function buildOurEntry(forwarderPath, eventName) {
+  return {
+    matcher: '*',
+    hooks: [{
+      type: 'command',
+      command: getHookRunnerCommand(forwarderPath, eventName),
+      timeout: 5,
+    }],
+  };
 }
 
 function isHookRegistered(debugLog, options) {
   const config = readClaudeConfig(debugLog, options);
-  const HTTP_HOOK_URL = `http://localhost:${HOOK_SERVER_PORT}/hook`;
+  const forwarderPath = getForwarderPath(options);
 
-  if (!config.hooks) {
+  if (!config.hooks || hasLegacyHttpHooks(config)) {
     return false;
   }
 
-  // All events must be registered — a partial registration (e.g. from an older
-  // version that only had 3 events) must trigger a full re-registration so that
-  // new events like SubagentStart/SubagentStop/TeammateIdle/PreCompact get added.
-  return HOOK_EVENTS.every(event =>
-    Array.isArray(config.hooks[event]) &&
-    config.hooks[event].some(entry => hasOurHookInEntry(entry, HTTP_HOOK_URL))
-  );
+  return HOOK_EVENTS.every(function (event) {
+    return Array.isArray(config.hooks[event])
+      && config.hooks[event].some(function (entry) {
+        return hasOurCommandHookInEntry(entry, forwarderPath);
+      });
+  });
 }
 
 function registerClaudeHooks(debugLog, options) {
   debugLog('[Hook] Checking Claude CLI hook registration status...');
+
+  const forwarderPath = getForwarderPath(options);
+
+  if (!fs.existsSync(forwarderPath)) {
+    debugLog(`[Hook] Forwarder not found at ${forwarderPath} — skipping`);
+    return false;
+  }
 
   if (isHookRegistered(debugLog, options)) {
     debugLog('[Hook] Hooks are already registered.');
@@ -84,26 +149,20 @@ function registerClaudeHooks(debugLog, options) {
   debugLog('[Hook] Starting hook registration...');
 
   const config = readClaudeConfig(debugLog, options);
-
   config.hooks = config.hooks || {};
 
-  const HTTP_HOOK_URL = `http://localhost:${HOOK_SERVER_PORT}/hook`;
-  const hookEvents = HOOK_EVENTS;
+  stripPadHooksFromConfig(config, forwarderPath);
 
-  const ourEntry = {
-    matcher: "*",
-    hooks: [{ type: "http", url: HTTP_HOOK_URL }]
-  };
+  for (const event of HOOK_EVENTS) {
+    const ourEntry = buildOurEntry(forwarderPath, event);
 
-  for (const event of hookEvents) {
     if (!Array.isArray(config.hooks[event])) {
-      // No hook for this event yet — create a new entry
       config.hooks[event] = [ourEntry];
-    } else if (!config.hooks[event].some(entry => hasOurHookInEntry(entry, HTTP_HOOK_URL))) {
-      // Preserve existing hooks and append ours
+    } else if (!config.hooks[event].some(function (entry) {
+      return hasOurCommandHookInEntry(entry, forwarderPath);
+    })) {
       config.hooks[event].push(ourEntry);
     }
-    // Already registered — leave it untouched
   }
 
   if (writeClaudeConfig(config, debugLog, options)) {
@@ -118,7 +177,10 @@ function registerClaudeHooks(debugLog, options) {
 module.exports = {
   HOOK_SERVER_PORT,
   HOOK_EVENTS,
+  PAD_HTTP_HOOK_URL,
+  PAD_FORWARDER_BASENAME,
   getClaudeConfigPath,
+  getForwarderPath,
   isHookRegistered,
   registerClaudeHooks,
 };

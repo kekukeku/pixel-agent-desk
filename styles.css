@@ -336,6 +336,11 @@ html {
   border-color: #334155;
 }
 
+.agent-card[data-state="playing"] .type-tag {
+  background: #ec4899;
+  border-color: #db2777;
+}
+
 /* Per-type card highlight (removed - prevents border artifacts) */
 .agent-card.type-main {
   border: none;
@@ -457,6 +462,11 @@ html {
   opacity: 0.8;
 }
 
+.agent-bubble.is-playing,
+.agent-card.state-playing .agent-bubble {
+  border-color: #ec4899;
+}
+
 /* Speech bubble tail (6px half-width, 7px height — unified with office view) */
 .agent-bubble::after {
   content: '';
@@ -489,6 +499,10 @@ html {
 
 .agent-bubble.is-offline::after {
   border-top-color: #475569;
+}
+
+.agent-bubble.is-playing::after {
+  border-top-color: #ec4899;
 }
 
 
@@ -1114,6 +1128,7 @@ html {
 .mini-avatar[data-state="thinking"] { border-color: #8b5cf6; }
 .mini-avatar[data-state="done"] { border-color: #22c55e; }
 .mini-avatar[data-state="waiting"] { border-color: #94a3b8; }
+.mini-avatar[data-state="playing"] { border-color: #ec4899; }
 .mini-avatar[data-state="help"],
 .mini-avatar[data-state="error"] { border-color: #ef4444; }
 .mini-avatar[data-state="offline"] { border-color: #475569; filter: grayscale(80%) opacity(0.5); }

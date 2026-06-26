@@ -306,7 +306,7 @@ describe('agentEventProcessor', () => {
       expect(agent).toBeTruthy();
       expect(agent.source).toBe('codex');
       expect(agent.model).toBe('gpt-4o-mini');
-      expect(agent.displayName).toBe('codex-app');
+      expect(agent.displayName).toBe('Codex');
       expect(agent.state).toBe('Thinking');
     });
 
@@ -797,6 +797,109 @@ describe('agentEventProcessor', () => {
       const agent = agentManager.getAgent('agent-extra');
       expect(agent.state).toBe('Thinking');
       expect(agent.firstSeen).toBe(2000000000000);
+    });
+
+    test('context_only update applies contextUsage without changing state', () => {
+      agentManager.updateAgent({
+        sessionId: 'grok-ctx-1',
+        source: 'grok-build',
+        state: 'Working',
+        currentTool: 'Shell',
+        tokenUsage: { inputTokens: 0, outputTokens: 0, estimatedCost: 0 },
+      }, 'test');
+
+      processor.processAgentEvent({
+        event: 'agent.thinking',
+        agent_id: 'grok-ctx-1',
+        source: 'grok-build',
+        context_usage: {
+          kind: 'snapshot',
+          tokens_used: 32927,
+          window_tokens: 200000,
+          percent: 16,
+          total_before_compaction: 0,
+        },
+        metadata: { context_only: true },
+        model: 'grok-composer-2.5-fast',
+      });
+
+      expect(agentManager.updateAgent).toHaveBeenLastCalledWith(
+        expect.objectContaining({
+          state: 'Working',
+          currentTool: 'Shell',
+          model: 'grok-composer-2.5-fast',
+          contextUsage: expect.objectContaining({
+            available: true,
+            percent: 16,
+            tokensUsed: 32927,
+          }),
+          tokenUsage: expect.objectContaining({
+            inputTokens: 0,
+            outputTokens: 0,
+            usageAvailable: false,
+            contextPercent: 16,
+          }),
+        }),
+        'processor'
+      );
+    });
+
+    test('context_only update invokes onContextUsage callback', () => {
+      const onContextUsage = jest.fn();
+      processor.init({
+        agentManager,
+        sessionPids,
+        debugLog,
+        detectClaudePidByTranscript,
+        onContextUsage,
+      });
+
+      agentManager.updateAgent({
+        sessionId: 'grok-ctx-2',
+        source: 'grok-build',
+        state: 'Working',
+        projectPath: '/tmp/proj',
+      }, 'test');
+
+      processor.processAgentEvent({
+        event: 'agent.thinking',
+        agent_id: 'grok-ctx-2',
+        source: 'grok-build',
+        project_path: '/tmp/proj',
+        model: 'grok-composer-2.5-fast',
+        context_usage: {
+          kind: 'snapshot',
+          tokens_used: 84000,
+          window_tokens: 200000,
+          percent: 42,
+        },
+        metadata: { context_only: true },
+      });
+
+      expect(onContextUsage).toHaveBeenCalledWith(expect.objectContaining({
+        agentId: 'grok-ctx-2',
+        source: 'grok-build',
+        tokensUsed: 84000,
+        model: 'grok-composer-2.5-fast',
+        projectPath: '/tmp/proj',
+      }));
+    });
+
+    test('context_only update does not auto-create missing agent', () => {
+      processor.processAgentEvent({
+        event: 'agent.thinking',
+        agent_id: 'missing-grok-session',
+        source: 'grok-build',
+        context_usage: {
+          kind: 'snapshot',
+          tokens_used: 1000,
+          window_tokens: 200000,
+          percent: 5,
+        },
+        metadata: { context_only: true },
+      });
+
+      expect(agentManager.getAgent('missing-grok-session')).toBeNull();
     });
 
     test('agent.done without last_assistant_message sets null', () => {

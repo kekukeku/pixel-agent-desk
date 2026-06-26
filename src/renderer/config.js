@@ -20,6 +20,7 @@ export const ANIM_SEQUENCES = {
   complete: { frames: F.front_alert_jump, fps: 4, loop: true },
   waiting:  { frames: F.front_idle,       fps: 4, loop: true },
   alert:    { frames: F.front_alert_jump, fps: 4, loop: true },
+  playing:  { frames: F.front_done_dance, fps: 8, loop: true },
 };
 
 // --- State-to-config mapping ---
@@ -30,6 +31,7 @@ export const stateConfig = {
   'Waiting': { anim: 'waiting', class: 'state-waiting', label: 'Waiting...' },
   'Error': { anim: 'alert', class: 'state-alert', label: 'Error!' },
   'Help': { anim: 'alert', class: 'state-alert', label: 'Help!' },
+  'Playing': { anim: 'playing', class: 'state-playing', label: 'Playing...' },
   'Offline': { anim: 'waiting', class: 'state-offline', label: 'Offline' }
 };
 

@@ -88,6 +88,19 @@ let livenessIntervals = null;
 let agentListeners = null;
 let integrationMgr = null;
 
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.exit(0);
+}
+
+app.on('second-instance', () => {
+  if (!windowManager) return;
+  const win = windowManager.dashboardWindow || windowManager.mainWindow;
+  if (!win || win.isDestroyed()) return;
+  if (win.isMinimized()) win.restore();
+  win.focus();
+});
+
 app.whenReady().then(() => {
   debugLog('========== Pixel Agent Desk started ==========');
 
@@ -140,6 +153,17 @@ app.whenReady().then(() => {
     detectClaudePidByTranscript,
   });
 
+  const processor = require('./main/agentEventProcessor');
+  processor.init({
+    agentManager,
+    sessionPids,
+    debugLog,
+    detectClaudePidByTranscript,
+    onContextUsage: (payload) => {
+      if (heatmapScanner) heatmapScanner.recordContextUsage(payload);
+    },
+  });
+
   // 4. Create window manager
   windowManager = createWindowManager({
     agentManager,
@@ -173,7 +197,12 @@ app.whenReady().then(() => {
   // 6.5. Initialize integrations after the local event server is ready.
   integrationMgr = integrationManager;
   integrationMgr.init({ debugLog });
-  integrationMgr.registerDefaultAdapters({ appConfig, debugLog, processAgentEvent: hookProcessor.processAgentEvent });
+  integrationMgr.registerDefaultAdapters({
+    appConfig,
+    debugLog,
+    processAgentEvent: hookProcessor.processAgentEvent,
+    hasAgent: (id) => !!(agentManager && agentManager.getAgent(id)),
+  });
   integrationMgr.detectAll();
   integrationMgr.ensureAll();
   integrationMgr.startAll();

@@ -24,10 +24,11 @@ function createOpenCodeIntegration(options) {
   const sourcePath = opts.sourcePath || path.join(__dirname, '..', '..', 'adapters', 'opencode-plugin.js');
   const debugLog = opts.debugLog || (() => {});
   const opencodeConfigDir = path.join(homeDir, '.config', 'opencode');
+  const openWorkConfigDir = path.join(homeDir, 'Library', '.opencode');
 
   function detectInstalled() {
     try {
-      return fs.existsSync(opencodeConfigDir);
+      return fs.existsSync(opencodeConfigDir) || fs.existsSync(openWorkConfigDir);
     } catch (e) {
       return false;
     }
@@ -67,7 +68,7 @@ function createOpenCodeIntegration(options) {
 
   return {
     id: 'opencode',
-    label: 'OpenWork / OpenCode',
+    label: 'OpenWork',
     setupMode: 'opencode-plugin',
     detectInstalled,
     detectIntegrated,

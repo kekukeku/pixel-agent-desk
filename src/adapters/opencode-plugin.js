@@ -67,7 +67,7 @@ function buildBase(sessionInfoMap, sessionID) {
  *
  * No fetch, no file I/O, no global state.
  */
-export function mapOpenCodeEvent(event, sessionInfoMap) {
+function mapOpenCodeEvent(event, sessionInfoMap) {
   const type = event.type;
   const props = event.properties;
   const payloads = [];
@@ -215,21 +215,26 @@ export function mapOpenCodeEvent(event, sessionInfoMap) {
   return payloads;
 }
 
-export default async function () {
-  const sessionInfoMap = new Map();
+const plugin = async function (input) {
+  const _sessionInfoMap = new Map();
 
   return {
-    hooks: {
-      async event({ event }) {
-        const payloads = mapOpenCodeEvent(event, sessionInfoMap);
-        for (let i = 0; i < payloads.length; i++) {
-          postEvent(payloads[i]);
-        }
-      },
+    async event({ event }) {
+      const payloads = mapOpenCodeEvent(event, _sessionInfoMap);
+      for (let i = 0; i < payloads.length; i++) {
+        postEvent(payloads[i]);
+      }
+    },
 
-      async dispose() {
-        sessionInfoMap.clear();
-      },
+    async dispose() {
+      _sessionInfoMap.clear();
     },
   };
-}
+};
+
+export default plugin;
+export { plugin as FolderWorkspacePlugin };
+export { plugin as PadAdapterPlugin };
+export { plugin as ExamplePlugin };
+export { plugin as server };
+

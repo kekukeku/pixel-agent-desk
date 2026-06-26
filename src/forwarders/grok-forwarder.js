@@ -16,7 +16,13 @@
 const http = require('http');
 
 const PAD_URL = 'http://127.0.0.1:47821/events/agent';
+const TIMEOUT_MS = 8000;
 const { mapGrokHookToAgentEvent } = require('../main/adapters/grokHookAdapter');
+
+// Suppress process.exit under test runners to prevent test suite termination
+const safeProcessExit = (process.env.JEST_WORKER_ID || process.env.NODE_ENV === 'test')
+  ? function (code) { /* no-op: prevent exit in test env */ }
+  : process.exit.bind(process);
 
 let raw = '';
 process.stdin.setEncoding('utf-8');
@@ -25,9 +31,20 @@ process.stdin.on('data', function (chunk) { raw += chunk; });
 process.stdin.on('end', function () {
   let payload;
   try {
-    payload = JSON.parse(raw);
+    if (raw.trim()) {
+      payload = JSON.parse(raw);
+    } else {
+      payload = {};
+    }
   } catch (e) {
-    process.exit(0);
+    safeProcessExit(0);
+  }
+
+  if (!payload.hookEventName && !payload.event && !payload.hook_event_name) {
+    const argvEvent = process.argv[2];
+    if (argvEvent) {
+      payload.hookEventName = argvEvent;
+    }
   }
 
   const env = process.env;
@@ -35,7 +52,7 @@ process.stdin.on('end', function () {
 
   const agentEvent = mapGrokHookToAgentEvent(payload, env, argv);
   if (!agentEvent) {
-    process.exit(0);
+    safeProcessExit(0);
   }
 
   const body = JSON.stringify(agentEvent);
@@ -44,7 +61,17 @@ process.stdin.on('end', function () {
     headers: { 'Content-Type': 'application/json', 'Content-Length': Buffer.byteLength(body) },
   });
 
-  req.on('error', function () {});
+  var done = false;
+  function safeExit() {
+    if (!done) {
+      done = true;
+      req.destroy();
+      safeProcessExit(0);
+    }
+  }
+
+  req.on('error', function () { safeExit(); });
+  req.setTimeout(TIMEOUT_MS, function () { safeExit(); });
   req.write(body);
-  req.end(function () { process.exit(0); });
+  req.end(function () { safeExit(); });
 });

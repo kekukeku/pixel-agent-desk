@@ -3,6 +3,8 @@
  * Stats calculation, API routing, SSE/WebSocket, CORS, path traversal protection
  */
 
+const setImmediate = global.setImmediate || ((fn, ...args) => setTimeout(fn, 0, ...args));
+
 // Mock dependencies before requiring the module
 jest.mock('fs', () => ({
   readFile: jest.fn(),
@@ -398,6 +400,116 @@ describe('dashboard-server', () => {
         expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
         const body = JSON.parse(res.end.mock.calls[0][0]);
         expect(body.username).toBe('User');
+      });
+    });
+
+    describe('GET /api/maps', () => {
+      const fs = require('fs');
+
+      afterEach(() => {
+        jest.clearAllMocks();
+      });
+
+      test('returns validated maps with proper names', () => {
+        fs.readdirSync.mockReturnValue(['map', 'map1', 'objects', 'incomplete_map']);
+        
+        fs.statSync = jest.fn().mockImplementation((path) => {
+          return { isDirectory: () => true };
+        });
+
+        fs.existsSync.mockImplementation((filePath) => {
+          if (filePath.endsWith('office')) return true;
+          if (filePath.includes('incomplete_map') && filePath.endsWith('office_bg_32.webp')) {
+            return false;
+          }
+          if (filePath.endsWith('meta.json')) {
+            return filePath.includes('map1');
+          }
+          return true;
+        });
+
+        fs.readFileSync.mockImplementation((filePath) => {
+          if (filePath.endsWith('meta.json')) {
+            return JSON.stringify({ name: 'My Forest Office' });
+          }
+          return '';
+        });
+
+        const { req, res } = createMockReqRes('GET', '/api/maps');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body).toHaveLength(2);
+        expect(body[0]).toEqual({ id: 'map', name: 'Default Office' });
+        expect(body[1]).toEqual({ id: 'map1', name: 'My Forest Office' });
+      });
+
+      test('returns empty array if office directory does not exist', () => {
+        fs.existsSync.mockReturnValue(false);
+
+        const { req, res } = createMockReqRes('GET', '/api/maps');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body).toEqual([]);
+      });
+
+      test('gracefully falls back to directory name mapping when meta.json has invalid JSON structure', () => {
+        fs.readdirSync.mockReturnValue(['map', 'map1']);
+        
+        fs.statSync = jest.fn().mockImplementation((path) => {
+          return { isDirectory: () => true };
+        });
+
+        fs.existsSync.mockImplementation((filePath) => {
+          if (filePath.endsWith('office')) return true;
+          return true; // all assets and meta.json exist
+        });
+
+        fs.readFileSync.mockImplementation((filePath) => {
+          if (filePath.endsWith('meta.json')) {
+            return '{ invalid json }';
+          }
+          return '';
+        });
+
+        const { req, res } = createMockReqRes('GET', '/api/maps');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body).toHaveLength(2);
+        expect(body[0]).toEqual({ id: 'map', name: 'Default Office' });
+        expect(body[1]).toEqual({ id: 'map1', name: 'Forest Office' });
+      });
+
+      test('excludes map folder missing any of the 4 required assets', () => {
+        fs.readdirSync.mockReturnValue(['map', 'map_missing_fg', 'map_missing_collision', 'map_missing_xy']);
+        
+        fs.statSync = jest.fn().mockImplementation((path) => {
+          return { isDirectory: () => true };
+        });
+
+        fs.existsSync.mockImplementation((filePath) => {
+          if (filePath.endsWith('office')) return true;
+          if (filePath.endsWith('meta.json')) return false;
+          
+          if (filePath.includes('map_missing_fg') && filePath.endsWith('office_fg_32.webp')) return false;
+          if (filePath.includes('map_missing_collision') && filePath.endsWith('office_collision.webp')) return false;
+          if (filePath.includes('map_missing_xy') && filePath.endsWith('office_xy.webp')) return false;
+          
+          return true;
+        });
+
+        const { req, res } = createMockReqRes('GET', '/api/maps');
+        handler(req, res);
+
+        expect(res.writeHead).toHaveBeenCalledWith(200, { 'Content-Type': 'application/json' });
+        const body = JSON.parse(res.end.mock.calls[0][0]);
+        expect(body).toHaveLength(1);
+        expect(body[0].id).toBe('map');
       });
     });
   });

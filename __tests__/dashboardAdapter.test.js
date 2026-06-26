@@ -22,6 +22,10 @@ describe('dashboardAdapter', () => {
       expect(mapPixelStateToDashboardState('')).toBe(DEFAULT_STATE);
       expect(mapPixelStateToDashboardState(undefined)).toBe(DEFAULT_STATE);
     });
+
+    test('maps Playing -> playing', () => {
+      expect(mapPixelStateToDashboardState('Playing')).toBe('playing');
+    });
   });
 
   describe('extractProjectName', () => {
@@ -29,10 +33,14 @@ describe('dashboardAdapter', () => {
       expect(extractProjectName('/home/user/projects/my-app')).toBe('my-app');
     });
 
-    test('returns Default for null/undefined/empty', () => {
-      expect(extractProjectName(null)).toBe('Default');
-      expect(extractProjectName(undefined)).toBe('Default');
-      expect(extractProjectName('')).toBe('Default');
+    test('returns empty string for null/undefined/empty', () => {
+      expect(extractProjectName(null)).toBe('');
+      expect(extractProjectName(undefined)).toBe('');
+      expect(extractProjectName('')).toBe('');
+    });
+
+    test('filters Default sentinel', () => {
+      expect(extractProjectName('/path/to/Default')).toBe('');
     });
 
     test('handles Windows paths', () => {
@@ -45,7 +53,7 @@ describe('dashboardAdapter', () => {
       const pixelAgent = {
         id: 'sess-123',
         sessionId: 'sess-123',
-        displayName: 'my-app',
+        displayName: 'Claude Code',
         projectPath: '/projects/my-app',
         state: 'Working',
         model: 'claude-sonnet-4-6',
@@ -68,8 +76,10 @@ describe('dashboardAdapter', () => {
 
       expect(result.id).toBe('sess-123');
       expect(result.sessionId).toBe('sess-123');
-      expect(result.name).toBe('my-app');
+      expect(result.name).toBe('Claude Code');
+      expect(result.agentName).toBe('Claude Code');
       expect(result.project).toBe('my-app');
+      expect(result.projectLabel).toBe('my-app');
       expect(result.status).toBe('working');
       expect(result.type).toBe('main');
       expect(result.model).toBe('claude-sonnet-4-6');
@@ -106,7 +116,9 @@ describe('dashboardAdapter', () => {
       const result = adaptAgentToDashboard({ sessionId: 's1', state: 'Waiting' });
 
       expect(result.name).toBe('Agent');
-      expect(result.project).toBe('Default');
+      expect(result.agentName).toBe('Spirit');
+      expect(result.project).toBe('');
+      expect(result.projectLabel).toBe('');
       expect(result.model).toBeNull();
       expect(result.currentTool).toBeNull();
       expect(result.lastMessage).toBeNull();
@@ -126,6 +138,33 @@ describe('dashboardAdapter', () => {
         const result = adaptAgentToDashboard({ sessionId: 's1', state });
         expect(result.timing.active).toBe(false);
       }
+    });
+
+    test('grok context-only agent exposes contextAvailable without metered usage', () => {
+      const result = adaptAgentToDashboard({
+        sessionId: 'grok-1',
+        state: 'Working',
+        source: 'grok-build',
+        model: 'grok-composer-2.5-fast',
+        contextUsage: {
+          available: true,
+          kind: 'snapshot',
+          percent: 42,
+          tokensUsed: 84000,
+          windowTokens: 200000,
+        },
+        tokenUsage: {
+          inputTokens: 0,
+          outputTokens: 0,
+          estimatedCost: 0,
+          usageAvailable: false,
+          contextPercent: 42,
+        },
+      });
+
+      expect(result.usageAvailable).toBe(false);
+      expect(result.contextAvailable).toBe(true);
+      expect(result.contextUsage.percent).toBe(42);
     });
 
     test('timing.active is true for Working and Thinking', () => {

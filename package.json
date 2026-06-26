@@ -28,11 +28,11 @@
     "multi-agent",
     "jsonl"
   ],
-  "author": "Mgpixelart",
-  "homepage": "https://github.com/Mgpixelart/pixel-agent-desk",
+  "author": "kekukeku",
+  "homepage": "https://github.com/kekukeku/pixel-agent-desk",
   "repository": {
     "type": "git",
-    "url": "https://github.com/Mgpixelart/pixel-agent-desk.git"
+    "url": "https://github.com/kekukeku/pixel-agent-desk.git"
   },
   "license": "MIT",
   "build": {
@@ -114,6 +114,7 @@
     "prettier": "^3.0.0"
   },
   "dependencies": {
-    "ajv": "^8.20.0"
+    "ajv": "^8.20.0",
+    "jsonc-parser": "^3.3.1"
   }
 }

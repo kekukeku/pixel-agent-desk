@@ -178,6 +178,7 @@ function registerDefaultAdapters(options) {
     if (typeof cf.createClaudeIntegration === 'function') {
       return cf.createClaudeIntegration({
         debugLog: log,
+        forwarderPath: opts.forwarderPath || null,
         homeDir: opts.homeDir || undefined,
       });
     }
@@ -191,6 +192,8 @@ function registerDefaultAdapters(options) {
         debugLog: log,
         forwarderPath: opts.forwarderPath || null,
         homeDir: opts.homeDir || undefined,
+        processAgentEvent: opts.processAgentEvent || null,
+        hasAgent: opts.hasAgent || null,
       });
     }
     return gf;

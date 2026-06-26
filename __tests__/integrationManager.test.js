@@ -379,7 +379,7 @@ describe('integrationManager', () => {
       manager.registerAdapter(createFakeAdapter({
         id: 'healthy',
         label: 'Healthy',
-        setupMode: 'legacy-http-hook',
+        setupMode: 'command-hook',
         detectInstalled: () => true,
         detectIntegrated: () => true,
         getHealth: () => ({ active: true, lastEventAt: Date.now(), error: null })
@@ -455,9 +455,9 @@ describe('integrationManager', () => {
       }
 
       expect(modes).toEqual({
-        'claude-code': 'legacy-http-hook',
+        'claude-code': 'command-hook',
         'codex': 'read-only-observer',
-        'grok-build': 'command-hook',
+        'grok-build': 'command-hook+observer',
         'antigravity': 'command-hook',
         'opencode': 'opencode-plugin'
       });
@@ -477,7 +477,7 @@ describe('integrationManager', () => {
         'codex': 'Codex',
         'grok-build': 'Grok Build',
         'antigravity': 'Antigravity',
-        'opencode': 'OpenWork / OpenCode'
+        'opencode': 'OpenWork'
       });
     });
 
@@ -624,10 +624,10 @@ describe('integrationManager', () => {
     });
 
     test('formats a single adapter', () => {
-      const report = [makeEntry('claude-code', 'Claude Code', { installed: true, integrated: false, setupMode: 'legacy-http-hook' })];
+      const report = [makeEntry('claude-code', 'Claude Code', { installed: true, integrated: false, setupMode: 'command-hook' })];
       const result = manager.formatCapabilityReport(report);
       expect(result).toContain('1 adapters registered');
-      expect(result).toContain('Claude Code: installed=true integrated=false active=false setupMode=legacy-http-hook');
+      expect(result).toContain('Claude Code: installed=true integrated=false active=false setupMode=command-hook');
     });
 
     test('includes lastEventAt when present', () => {
@@ -670,16 +670,16 @@ describe('integrationManager', () => {
 
     test('full report format is correct', () => {
       const report = [
-        makeEntry('claude-code', 'Claude Code', { installed: true, integrated: true, setupMode: 'legacy-http-hook' }),
+        makeEntry('claude-code', 'Claude Code', { installed: true, integrated: true, setupMode: 'command-hook' }),
         makeEntry('codex', 'Codex', { installed: true, integrated: true, active: true, setupMode: 'read-only-observer', lastEventAt: 1710000000000 }),
-        makeEntry('grok-build', 'Grok Build', { setupMode: 'command-hook' }),
+        makeEntry('grok-build', 'Grok Build', { setupMode: 'command-hook+observer' }),
         makeEntry('antigravity', 'Antigravity', { error: 'not installed' }),
       ];
       const result = manager.formatCapabilityReport(report);
       expect(result).toContain('4 adapters registered');
-      expect(result).toContain('Claude Code: installed=true integrated=true active=false setupMode=legacy-http-hook');
+      expect(result).toContain('Claude Code: installed=true integrated=true active=false setupMode=command-hook');
       expect(result).toContain('Codex: installed=true integrated=true active=true setupMode=read-only-observer lastEventAt=1710000000000');
-      expect(result).toContain('Grok Build: installed=false integrated=false active=false setupMode=command-hook');
+      expect(result).toContain('Grok Build: installed=false integrated=false active=false setupMode=command-hook+observer');
       expect(result).toContain('Antigravity: installed=false integrated=false active=false setupMode=process-fallback [ERROR: not installed]');
     });
 

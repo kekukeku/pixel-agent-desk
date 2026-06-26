@@ -97,6 +97,7 @@ function calculateStats() {
     help: 0,
     error: 0,
     done: 0,
+    playing: 0,
     offline: 0,
     byProject: {},
     byType: {
@@ -269,9 +270,12 @@ function handleRequest(req, res) {
         res.end('Not Found');
         return;
       }
+      const cacheControl = ext === '.js' || ext === '.css'
+        ? 'no-cache'
+        : 'public, max-age=3600';
       res.writeHead(200, {
         'Content-Type': mime,
-        'Cache-Control': 'public, max-age=3600'
+        'Cache-Control': cacheControl
       });
       res.end(data);
     });
@@ -697,6 +701,88 @@ function handleGetPlanningSessionMarkdown(req, res, url) {
   }
 }
 
+function handleGetMaps(req, res, url) {
+  const officeDir = path.join(__dirname, '..', 'public', 'office');
+  try {
+    if (!fs.existsSync(officeDir)) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify([]));
+      return;
+    }
+
+    const files = fs.readdirSync(officeDir);
+    const maps = [];
+
+    const REQUIRED_FILES = [
+      'office_bg_32.webp',
+      'office_fg_32.webp',
+      'office_collision.webp',
+      'office_xy.webp'
+    ];
+
+    for (const file of files) {
+      const folderPath = path.join(officeDir, file);
+      const stat = fs.statSync(folderPath);
+      if (stat.isDirectory()) {
+        if (file === 'objects') continue;
+
+        const hasAllFiles = REQUIRED_FILES.every(reqFile => {
+          return fs.existsSync(path.join(folderPath, reqFile));
+        });
+
+        if (hasAllFiles) {
+          let name = null;
+          const metaPath = path.join(folderPath, 'meta.json');
+          if (fs.existsSync(metaPath)) {
+            try {
+              const metaContent = JSON.parse(fs.readFileSync(metaPath, 'utf8'));
+              if (metaContent && metaContent.name) {
+                name = metaContent.name;
+              }
+            } catch (err) {
+              // Ignore invalid meta.json
+            }
+          }
+          if (!name) {
+            if (file === 'map') {
+              name = 'Default Office';
+            } else if (file === 'map1') {
+              name = 'Forest Office';
+            } else if (file === 'map2') {
+              name = 'Forest Office (Staging)';
+            } else if (file === 'map3') {
+              name = 'Bamboo Study';
+            } else if (file === 'map4') {
+              name = 'French Court Salon';
+            } else if (file === 'map5') {
+              name = 'Starship Deck';
+            } else {
+              name = file.split(/[-_]/).map(word => word.charAt(0).toUpperCase() + word.slice(1)).join(' ');
+            }
+          }
+
+          maps.push({
+            id: file,
+            name: name
+          });
+        }
+      }
+    }
+
+    maps.sort((a, b) => {
+      if (a.id === 'map') return -1;
+      if (b.id === 'map') return 1;
+      return a.id.localeCompare(b.id, undefined, { numeric: true, sensitivity: 'base' });
+    });
+
+    res.writeHead(200, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify(maps));
+  } catch (err) {
+    res.writeHead(500, { 'Content-Type': 'application/json' });
+    res.end(JSON.stringify({ error: 'Failed to list maps: ' + err.message }));
+  }
+}
+
 /** Route table: "METHOD /path" → handler */
 const apiRoutes = {
   'GET /api/events': handleSSE,
@@ -708,6 +794,7 @@ const apiRoutes = {
   'GET /api/profile': handleGetProfile,
   'GET /api/name-map': handleGetNameMap,
   'GET /api/planning/sessions': handleGetPlanningSessions,
+  'GET /api/maps': handleGetMaps,
 };
 
 /**

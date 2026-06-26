@@ -31,6 +31,7 @@
   --color-state-waiting: #8b949e;
   --color-state-done: #238636;
   --color-state-error: #f85149;
+  --color-state-playing: #ec4899;
 
   --radius-sm: 6px;
   --radius-md: 10px;
@@ -343,6 +344,26 @@ body {
   text-transform: uppercase;
 }
 
+.map-theme-select {
+  min-width: 150px;
+  max-width: 220px;
+  height: 28px;
+  background: rgba(30, 41, 59, 0.9);
+  border: 1px solid var(--color-border);
+  color: var(--color-text);
+  border-radius: var(--radius-sm);
+  padding: 2px 8px;
+  font-size: 0.72rem;
+  font-weight: 500;
+  cursor: pointer;
+  outline: none;
+}
+
+.map-theme-select:hover,
+.map-theme-select:focus {
+  border-color: var(--color-primary);
+}
+
 .panel-body {
   padding: 20px;
   flex: 1;
@@ -489,6 +510,12 @@ body {
   background: rgba(255, 255, 255, 0.05);
   border-color: rgba(255, 255, 255, 0.1);
   color: var(--color-text-muted);
+}
+
+.mc-agent-status.playing {
+  background: rgba(236, 72, 153, 0.1);
+  border-color: rgba(236, 72, 153, 0.2);
+  color: var(--color-state-playing);
 }
 
 .mc-agent-activity {
@@ -1502,4 +1529,3 @@ body {
   color: var(--color-error);
   background: var(--color-error-dim);
 }
-

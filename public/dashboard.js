@@ -27,6 +27,28 @@ function hasMeteredUsage(ag) {
   return false;
 }
 
+function hasContextUsage(ag) {
+  if (!ag) return false;
+  if (ag.contextAvailable) return true;
+  if (ag.contextUsage && ag.contextUsage.available) return true;
+  if (hasMeteredUsage(ag)) return false;
+  const pct = ag.tokenUsage && ag.tokenUsage.contextPercent;
+  return pct != null && ag.source === 'grok-build';
+}
+
+function formatContextTokens(ag) {
+  const used = ag?.contextUsage?.tokensUsed;
+  if (used > 0) return formatNum(used);
+  const pct = ag?.tokenUsage?.contextPercent;
+  if (pct != null) return `~${pct}% ctx`;
+  return '—';
+}
+
+function dayIndexedTokens(day) {
+  if (!day) return 0;
+  return (day.inputTokens || 0) + (day.outputTokens || 0) + (day.contextTokens || 0);
+}
+
 const DOM = {
   statusIndicator: document.getElementById('statusIndicator'),
   connectionStatus: document.getElementById('connectionStatus'),
@@ -230,7 +252,7 @@ function updateAgentUI(ag) {
   DOM.standbyMessage.style.display = 'none';
   const existing = DOM.agentPanel.querySelector(`[data-id="${ag.id}"]`);
 
-  const stClass = ['working', 'thinking', 'error', 'done', 'completed'].includes(ag.status) ? ag.status : 'waiting';
+  const stClass = ['working', 'thinking', 'error', 'done', 'completed', 'playing'].includes(ag.status) ? ag.status : 'waiting';
   const stText = (ag.statusBadge || ag.status || 'IDLE');
   const typeHtml = ag.metadata?.isSubagent ? '<span class="mc-type-badge">↳ SUB</span>' : '<span class="mc-type-badge main">MAIN</span>';
 
@@ -244,14 +266,17 @@ function updateAgentUI(ag) {
   const sourceBadge = `<span class="mc-source-badge ${srcClass}" title="${safeSrcLabel}">${safeSrcLabel}</span>`;
 
   const isAct = ['working', 'thinking'].includes(stClass);
-  const actText = ag.activityText || (ag.currentTool ? `CMD> ${ag.currentTool}` : (isAct ? stText : 'Idling...'));
+  const actText = ag.commandText || ag.activityText || (ag.currentTool ? `CMD> ${ag.currentTool}` : (isAct ? stText : 'Idling...'));
 
   const isMetered = hasMeteredUsage(ag);
-  const tokens = formatNum((ag.tokenUsage?.inputTokens || 0) + (ag.tokenUsage?.outputTokens || 0));
-  const cost = (ag.tokenUsage?.estimatedCost || 0).toFixed(4);
+  const hasCtxAvail = hasContextUsage(ag);
+  const tokens = isMetered
+    ? formatNum((ag.tokenUsage?.inputTokens || 0) + (ag.tokenUsage?.outputTokens || 0))
+    : '—';
+  const cost = isMetered ? (ag.tokenUsage?.estimatedCost || 0).toFixed(4) : 'N/A';
 
   const ctxPct = ag.tokenUsage?.contextPercent;
-  const hasCtx = isMetered && ctxPct != null;
+  const hasCtx = (hasCtxAvail || isMetered) && ctxPct != null;
   const ctxColor = !hasCtx ? '' : ctxPct > 85 ? 'ctx-high' : ctxPct > 60 ? 'ctx-mid' : 'ctx-low';
   const ctxValText = hasCtx ? `~${ctxPct}%` : '--';
 
@@ -278,14 +303,17 @@ function updateAgentUI(ag) {
          <button type="submit" class="mc-name-btn save" title="Save" style="background: none; border: none; padding: 2px; cursor: pointer; color: #58a6ff; font-size: 0.9rem;">✓</button>
          <button type="button" class="mc-name-btn cancel" title="Cancel" style="background: none; border: none; padding: 2px; cursor: pointer; color: #f85149; font-size: 0.9rem;">✗</button>
        </form>`
-    : `<span class="mc-agent-name-text">${escapeHtml(ag.name || 'Agent')}</span>
+    : `<span class="mc-agent-name-text">${escapeHtml(ag.agentName || ag.name || 'Spirit')}</span>
        <button class="mc-name-edit-btn" title="Edit Name" style="background: none; border: none; padding: 0 4px; cursor: pointer; color: #8b949e; font-size: 0.75rem; vertical-align: middle;">✎</button>`;
 
   const metricsHtml = isMetered
     ? `<span>TX: <span class="mc-metric-val">${tokens}</span> tok</span>
        <span>$<span class="mc-metric-val">${cost}</span></span>`
-    : `<span>Usage unavailable</span>
-       <span>Cost: <span class="mc-metric-val">N/A</span></span>`;
+    : hasCtxAvail
+      ? `<span>CTX: <span class="mc-metric-val">${formatContextTokens(ag)}</span> tok</span>
+         <span>Cost: <span class="mc-metric-val">—</span></span>`
+      : `<span>Usage unavailable</span>
+         <span>Cost: <span class="mc-metric-val">N/A</span></span>`;
 
   // Resolve current avatar from localStorage override or default assignments
   const overrides = getLocalAvatarOverrides();
@@ -390,6 +418,7 @@ function getStateColor(status) {
     waiting: 'var(--color-state-waiting)',
     done: 'var(--color-state-done)',
     completed: 'var(--color-state-done)',
+    playing: 'var(--color-state-playing)',
     error: 'var(--color-state-error)',
   };
   return map[status] || 'var(--color-state-waiting)';
@@ -427,7 +456,7 @@ function showOfficePopover(canvas, char) {
   const ag = state.agents.get(char.id);
   const name = char.role || (ag && ag.name) || 'Agent';
   const status = (ag && ag.status) || char.agentState || 'idle';
-  const stClass = ['working', 'thinking', 'error', 'done', 'completed'].includes(status) ? status : 'waiting';
+  const stClass = ['working', 'thinking', 'error', 'done', 'completed', 'playing'].includes(status) ? status : 'waiting';
   const project = (ag && ag.metadata && ag.metadata.projectSlug) || char.metadata?.project || '-';
   const tool = (ag && ag.currentTool) || char.metadata?.tool || '-';
   const model = (ag && ag.model) || '-';
@@ -437,9 +466,12 @@ function showOfficePopover(canvas, char) {
   const ctxPct = (ag && ag.tokenUsage?.contextPercent);
 
   const isMetered = hasMeteredUsage(ag);
-  const tokensVal = isMetered ? formatNum(inputTok + outputTok) : 'Usage unavailable';
-  const costVal = isMetered ? `$${cost.toFixed(4)}` : 'N/A';
-  const ctxValText = isMetered && ctxPct != null ? `~${ctxPct}%` : '-';
+  const hasCtxAvail = hasContextUsage(ag);
+  const tokensVal = isMetered
+    ? formatNum(inputTok + outputTok)
+    : (hasCtxAvail ? formatContextTokens(ag) : '—');
+  const costVal = isMetered ? `$${cost.toFixed(4)}` : (hasCtxAvail ? '—' : 'N/A');
+  const ctxValText = (hasCtxAvail || isMetered) && ctxPct != null ? `~${ctxPct}%` : '-';
 
   popoverEl.innerHTML = `
     <div class="pop-header">
@@ -512,6 +544,7 @@ const MODEL_COLORS = {
   opus: '#e879a0',
   sonnet: '#2f81f7',
   haiku: '#3fb950',
+  grok: '#f0883e',
 };
 
 function getModelFamily(modelName) {
@@ -520,6 +553,7 @@ function getModelFamily(modelName) {
   if (lower.includes('opus')) return 'opus';
   if (lower.includes('sonnet')) return 'sonnet';
   if (lower.includes('haiku')) return 'haiku';
+  if (lower.includes('grok')) return 'grok';
   return null;
 }
 
@@ -546,9 +580,10 @@ function renderModelBreakdown(days) {
   for (const dayStats of Object.values(days)) {
     if (!dayStats.byModel) continue;
     for (const [model, ms] of Object.entries(dayStats.byModel)) {
-      if (!totals[model]) totals[model] = { inputTokens: 0, outputTokens: 0, estimatedCost: 0 };
+      if (!totals[model]) totals[model] = { inputTokens: 0, outputTokens: 0, contextTokens: 0, estimatedCost: 0 };
       totals[model].inputTokens += ms.inputTokens || 0;
       totals[model].outputTokens += ms.outputTokens || 0;
+      totals[model].contextTokens += ms.contextTokens || 0;
       totals[model].estimatedCost += ms.estimatedCost || 0;
     }
   }
@@ -561,24 +596,29 @@ function renderModelBreakdown(days) {
   root.style.display = 'block';
 
   const grandCost = models.reduce((s, m) => s + totals[m].estimatedCost, 0);
+  const modelWeight = (m) => (totals[m].inputTokens + totals[m].outputTokens + totals[m].contextTokens) || totals[m].estimatedCost;
 
-  // Build proportional bar
+  // Build proportional bar (cost-weighted when billed; otherwise token-weighted)
   const barSegs = models.map(m => {
-    const pct = grandCost > 0 ? (totals[m].estimatedCost / grandCost) : 0;
-    return `<div class="model-seg" style="flex-grow:${Math.max(totals[m].estimatedCost, 0.001)};background:${getModelColor(m)}" title="${getModelDisplayName(m)}: $${totals[m].estimatedCost.toFixed(2)}"></div>`;
+    const weight = grandCost > 0 ? totals[m].estimatedCost : modelWeight(m);
+    const title = grandCost > 0
+      ? `${getModelDisplayName(m)}: $${totals[m].estimatedCost.toFixed(2)}`
+      : `${getModelDisplayName(m)}: ${formatNum(modelWeight(m))} tok`;
+    return `<div class="model-seg" style="flex-grow:${Math.max(weight, 0.001)};background:${getModelColor(m)}" title="${title}"></div>`;
   }).join('');
 
   // Build legend
   const legendItems = models
     .sort((a, b) => totals[b].estimatedCost - totals[a].estimatedCost)
     .map(m => {
-      const tok = formatNum(totals[m].inputTokens + totals[m].outputTokens);
+      const tok = formatNum(totals[m].inputTokens + totals[m].outputTokens + totals[m].contextTokens);
       const cost = totals[m].estimatedCost.toFixed(2);
+      const costLabel = totals[m].estimatedCost > 0 ? `$${cost}` : (totals[m].contextTokens > 0 ? '—' : '$0.00');
       return `<div class="model-legend-item">
         <div class="model-legend-dot" style="background:${getModelColor(m)}"></div>
         <span>${getModelDisplayName(m)}</span>
         <span class="model-legend-val">${tok} tok</span>
-        <span class="model-legend-val">$${cost}</span>
+        <span class="model-legend-val">${costLabel}</span>
       </div>`;
     }).join('');
 
@@ -680,7 +720,7 @@ function showTooltip(el, dStr, data) {
   tt.innerHTML = `<div class="tt-head">${dStr}</div>`;
   if (data) {
     tt.innerHTML += `<div class="tt-row"><span>Sessions</span><span class="tt-val">${data.sessions}</span></div>
-                     <div class="tt-row"><span>Tokens</span><span class="tt-val">${formatNum((data.inputTokens || 0) + (data.outputTokens || 0))}</span></div>
+                     <div class="tt-row"><span>Tokens</span><span class="tt-val">${formatNum(dayIndexedTokens(data))}</span></div>
                      <div class="tt-row"><span>Cost</span><span class="tt-val">$${(data.estimatedCost || 0).toFixed(2)}</span></div>`;
   } else {
     tt.innerHTML += `<div style="opacity:0.6;font-style:italic">No activity detected.</div>`;
@@ -698,23 +738,27 @@ async function renderUsageView() {
   const days = historyState.data.days || {};
   const mode = historyState.mode;
 
-  let tTok = 0, tCost = 0, tTool = 0, tSes = 0;
+  let tTok = 0, tCtx = 0, tCost = 0, tTool = 0, tSes = 0;
   Object.values(days).forEach(d => {
     tTok += (d.inputTokens || 0) + (d.outputTokens || 0);
+    tCtx += d.contextTokens || 0;
     tCost += d.estimatedCost || 0;
     tTool += d.toolUses || 0;
     tSes += d.sessions || 0;
   });
 
   const hasMeteredData = tTok > 0 || tCost > 0;
+  const hasContextData = tCtx > 0;
+  const hasUsageData = hasMeteredData || hasContextData;
+  const indexedTotal = tTok + tCtx;
 
-  document.getElementById('uTotalTokens').textContent = hasMeteredData ? formatNum(tTok) : 'N/A';
-  document.getElementById('uTotalCost').textContent = hasMeteredData ? `$${tCost.toFixed(2)}` : 'N/A';
+  document.getElementById('uTotalTokens').textContent = hasUsageData ? formatNum(indexedTotal) : 'N/A';
+  document.getElementById('uTotalCost').textContent = hasMeteredData ? `$${tCost.toFixed(2)}` : (hasContextData ? '—' : 'N/A');
   document.getElementById('uTotalTools').textContent = formatNum(tTool);
   document.getElementById('uTotalSessions').textContent = formatNum(tSes);
 
-  if (hasMeteredData) {
-    const tChart = aggChart(days, mode, d => (d.inputTokens || 0) + (d.outputTokens || 0));
+  if (hasUsageData) {
+    const tChart = aggChart(days, mode, d => dayIndexedTokens(d));
     const cChart = aggChart(days, mode, d => d.estimatedCost || 0);
 
     document.getElementById('chartTokensRoot').innerHTML = buildBars(tChart, 'tokens');
@@ -745,7 +789,7 @@ async function renderUsageView() {
       emptyStateEl.style.borderColor = 'var(--color-border)';
       document.getElementById('usageView').appendChild(emptyStateEl);
     }
-    emptyStateEl.textContent = 'No metered API usage reported. Subscription and TUI agents may not expose token totals.';
+    emptyStateEl.textContent = 'No usage indexed yet. API agents report metered tokens; Grok Build reports context window tokens when PAD is running.';
     emptyStateEl.style.display = 'block';
   }
 }
@@ -1512,6 +1556,11 @@ async function initApp() {
     loadGroupChatSessions();
   }
 
+  // Load map themes before starting office canvas loading
+  if (typeof loadMapThemes === 'function') {
+    await loadMapThemes();
+  }
+
   // We rely on standard office-init.js to boot the canvas logic
   if (typeof initOffice === 'function') setTimeout(() => {
     initOffice().then(() => {
@@ -1522,5 +1571,74 @@ async function initApp() {
     setupOfficeClickHandler();
   }, 100);
 }
+
+// ─── MAP THEME SWITCHER ───
+var loadMapThemesPromise = null;
+const FALLBACK_MAP_THEMES = [
+  { id: 'map', name: 'Default Office' },
+  { id: 'map1', name: 'Forest Office' },
+  { id: 'map2', name: 'Forest Office (Staging)' },
+  { id: 'map3', name: 'Bamboo Study' },
+  { id: 'map4', name: 'French Court Salon' },
+  { id: 'map5', name: 'Starship Deck' },
+];
+
+function populateMapThemeSelect(mapSelect, maps) {
+  const validMaps = Array.isArray(maps) && maps.length > 0 ? maps : FALLBACK_MAP_THEMES;
+  mapSelect.innerHTML = '';
+
+  validMaps.forEach(map => {
+    const opt = document.createElement('option');
+    opt.value = map.id;
+    opt.textContent = map.name;
+    mapSelect.appendChild(opt);
+  });
+
+  let savedMap = localStorage.getItem('officeMapFolder') || 'map';
+  const exists = validMaps.some(map => map.id === savedMap);
+  if (!exists) {
+    console.warn(`Saved map folder "${savedMap}" not found. Falling back to default.`);
+    savedMap = validMaps[0].id;
+    localStorage.setItem('officeMapFolder', savedMap);
+  }
+
+  mapSelect.value = savedMap;
+}
+
+async function loadMapThemes() {
+  if (loadMapThemesPromise) return loadMapThemesPromise;
+  
+  loadMapThemesPromise = (async () => {
+    const mapSelect = document.getElementById('mapThemeSelect');
+    if (!mapSelect) return;
+
+    populateMapThemeSelect(mapSelect, FALLBACK_MAP_THEMES);
+
+    try {
+      const res = await fetch('/api/maps');
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const maps = await res.json();
+      populateMapThemeSelect(mapSelect, maps);
+    } catch (e) {
+      console.error('Error loading map themes:', e);
+      populateMapThemeSelect(mapSelect, FALLBACK_MAP_THEMES);
+    }
+  })();
+  
+  return loadMapThemesPromise;
+}
+
+(function () {
+  const mapSelect = document.getElementById('mapThemeSelect');
+  if (mapSelect) {
+    mapSelect.addEventListener('change', function () {
+      const newFolder = mapSelect.value;
+      localStorage.setItem('officeMapFolder', newFolder);
+      if (typeof officeRenderer !== 'undefined' && officeRenderer.reloadMap) {
+        officeRenderer.reloadMap();
+      }
+    });
+  }
+})();
 
 document.addEventListener('DOMContentLoaded', initApp);

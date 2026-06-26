@@ -23,6 +23,7 @@ describe('codexObserver', () => {
     events = [];
 
     jest.useFakeTimers();
+    jest.setSystemTime(new Date(1719000000500));
   });
 
   afterEach(() => {
@@ -121,7 +122,7 @@ describe('codexObserver', () => {
       const started = events.find(function (e) { return e.event === 'agent.started'; });
       expect(started).toBeTruthy();
       expect(started.agent_id).toBe('019ee999-1111-7222-8333-abcdefabcdef');
-      expect(started.name).toBe('desktop-pad');
+      expect(started.name).toBe('Codex');
       expect(started.project_path).toBe('/projects/desktop-pad');
 
       const working = events.find(function (e) { return e.event === 'agent.working'; });
@@ -145,7 +146,7 @@ describe('codexObserver', () => {
       });
       expect(started).toBeTruthy();
       expect(started.source).toBe('codex');
-      expect(started.name).toBe('pixel-agent-desk');
+      expect(started.name).toBe('Codex');
 
       const idle = events.find(function (e) {
         return e.event === 'agent.idle' && e.agent_id === started.agent_id;
@@ -672,7 +673,7 @@ describe('codexObserver', () => {
       obs.stop();
     });
 
-    test('chat_processes without timestamps does not re-emit on repeated poll', () => {
+    test('chat_processes without timestamps is ignored', () => {
       writeChatProcesses({
         processes: [{
           session_id: 'cp-nodate',
@@ -684,12 +685,31 @@ describe('codexObserver', () => {
       obs.start();
 
       const workingEvents = events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp-nodate'; });
-      expect(workingEvents.length).toBe(1);
+      expect(workingEvents.length).toBe(0);
 
-      // Next poll with same content — should not re-emit
       jest.advanceTimersByTime(300);
       const subsequent = events.filter(function (e) { return e.event === 'agent.working' && e.agent_id === 'cp-nodate'; });
-      expect(subsequent.length).toBe(1);
+      expect(subsequent.length).toBe(0);
+
+      obs.stop();
+    });
+
+    test('stale chat_processes entries are ignored on startup', () => {
+      writeChatProcesses({
+        processes: [{
+          session_id: 'cp-stale',
+          command: 'old command',
+          updatedAtMs: 1718990000000,
+        }],
+      });
+
+      const obs = createObs({ pollIntervalMs: 200, chatProcessFreshMs: 120000 });
+      obs.start();
+
+      const working = events.find(function (e) {
+        return e.event === 'agent.working' && e.agent_id === 'cp-stale';
+      });
+      expect(working).toBeFalsy();
 
       obs.stop();
     });

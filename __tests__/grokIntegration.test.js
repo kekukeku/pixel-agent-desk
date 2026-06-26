@@ -40,7 +40,7 @@ describe('grokIntegration', () => {
       expect(adapter).toMatchObject({
         id: 'grok-build',
         label: 'Grok Build',
-        setupMode: 'command-hook',
+        setupMode: 'command-hook+observer',
       });
       expect(typeof adapter.detectInstalled).toBe('function');
       expect(typeof adapter.detectIntegrated).toBe('function');
@@ -105,14 +105,40 @@ describe('grokIntegration', () => {
   });
 
   describe('start / stop', () => {
-    test('start returns skipped', () => {
+    test('start returns skipped without processAgentEvent', () => {
       const result = adapter.start();
       expect(result.status).toBe('skipped');
     });
 
-    test('stop returns skipped', () => {
+    test('start returns skipped when grok home missing', () => {
+      const noGrok = createGrokIntegration({
+        homeDir: path.join(tempDir, 'empty-home'),
+        forwarderPath: forwarderFile,
+        processAgentEvent: jest.fn(),
+        debugLog: jest.fn(),
+      });
+      expect(noGrok.start().status).toBe('skipped');
+    });
+
+    test('start launches observer when grok home exists', () => {
+      fs.mkdirSync(path.join(tempDir, '.grok'), { recursive: true });
+      const wired = createGrokIntegration({
+        homeDir: tempDir,
+        forwarderPath: forwarderFile,
+        processAgentEvent: jest.fn(),
+        hasAgent: () => false,
+        debugLog: jest.fn(),
+      });
+      const result = wired.start();
+      expect(result.status).toBe('started');
+      expect(wired.getHealth().active).toBe(true);
+      wired.stop();
+      expect(wired.getHealth().active).toBe(false);
+    });
+
+    test('stop returns stopped', () => {
       const result = adapter.stop();
-      expect(result.status).toBe('skipped');
+      expect(result.status).toBe('stopped');
     });
   });
 

@@ -32,8 +32,7 @@ function loadMapOpenCodeEvent(src) {
   const esc = eval('(function(\\u0065xports){' +
     src
       .replace(/export\s+function\s+mapOpenCodeEvent/g, 'function mapOpenCodeEvent')
-      .replace(/export\s+default\s+async\s+function/g, 'function _defaultExport')
-      .replace(/^export\s*\{[^}]*\}/gm, '// removed named export block')
+      .replace(/^export\s+.*/gm, '// removed export')
     + '; return mapOpenCodeEvent; })');
   return esc({});
 }

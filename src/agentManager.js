@@ -3,6 +3,18 @@ const path = require('path');
 const os = require('os');
 const fs = require('fs');
 const { formatSlugToDisplayName } = require('./utils');
+const { formatAgentSource, resolveAgentDisplayName } = require('./agentDisplayFormat');
+
+const SINGLETON_SOURCE_LABELS = new Set(['grok-build', 'antigravity']);
+
+function normalizeProjectPath(projectPath) {
+  if (!projectPath) return '';
+  return String(projectPath).replace(/[/\\]+$/, '');
+}
+
+function isLikelyGrokSessionId(agentId) {
+  return /^[0-9a-f]{8}-[0-9a-f]{4}-/i.test(agentId || '');
+}
 
 // Single source of truth: public/shared/avatars.json
 const AVATAR_FILES = require('../public/shared/avatars.json');
@@ -32,6 +44,13 @@ function mergeField(entry, existing, key, defaultVal = null) {
   return existing ? existing[key] : defaultVal;
 }
 
+/**
+ * Check if a state is considered "resting" (eligible for Playing transition)
+ */
+function isRestingState(state) {
+  return state === 'Waiting' || state === 'Done';
+}
+
 class AgentManager extends EventEmitter {
   constructor() {
     super();
@@ -41,15 +60,29 @@ class AgentManager extends EventEmitter {
     this.config = {
       softLimitWarning: 50,  // Soft warning (does not block, only logs)
       stateDebounceMs: 500,  // Working→Thinking transition debounce (ms)
+      playingTransitionMs: 60_000,
+      playingCheckIntervalMs: 5_000,
     };
   }
 
   start() {
     // Agent cleanup is handled exclusively by the main.js liveness checker (PID-based)
+    if (typeof setInterval === 'function') {
+      this._playingTimer = setInterval(
+        () => this._checkPlayingStateTransitions(),
+        this.config.playingCheckIntervalMs
+      );
+    }
     console.log('[AgentManager] Started');
   }
 
   stop() {
+    if (this._playingTimer) {
+      if (typeof clearInterval === 'function') {
+        clearInterval(this._playingTimer);
+      }
+      this._playingTimer = null;
+    }
     for (const pending of this._pendingEmit.values()) {
       clearTimeout(pending.timer);
     }
@@ -72,6 +105,7 @@ class AgentManager extends EventEmitter {
       console.warn(`[AgentManager] ⚠ ${this.agents.size} agents active (soft limit: ${this.config.softLimitWarning}). Consider checking for stale sessions.`);
     }
 
+
     const prevState = existingAgent ? existingAgent.state : null;
     let newState = entry.state;
     if (!newState) newState = prevState || 'Done';
@@ -79,8 +113,8 @@ class AgentManager extends EventEmitter {
     let activeStartTime = existingAgent ? existingAgent.activeStartTime : now;
     let lastDuration = existingAgent ? existingAgent.lastDuration : 0;
 
-    // When entering active state (Done/Error/Help/Waiting -> Working/Thinking)
-    const isPassive = (s) => s === 'Done' || s === 'Help' || s === 'Error' || s === 'Waiting';
+    // When entering active state (Done/Error/Help/Waiting/Playing -> Working/Thinking)
+    const isPassive = (s) => s === 'Done' || s === 'Help' || s === 'Error' || s === 'Waiting' || s === 'Playing';
     const isActive = (s) => s === 'Working' || s === 'Thinking';
 
     if (isActive(newState) && (isPassive(prevState) || !existingAgent)) {
@@ -92,14 +126,29 @@ class AgentManager extends EventEmitter {
       lastDuration = now - activeStartTime;
     }
 
+    // Server-side Playing preservation: if agent is Playing and new event is resting, keep Playing
+    if (existingAgent && existingAgent.state === 'Playing' && isRestingState(newState)) {
+      newState = 'Playing';
+    }
+
     const m = (key, defaultVal = null) => mergeField(entry, existingAgent, key, defaultVal);
+
+    // restingStartTime tracking
+    let restingStartTime = existingAgent ? existingAgent.restingStartTime : null;
+    if (isRestingState(newState) && !isRestingState(prevState) && prevState !== 'Playing') {
+      restingStartTime = now;
+    } else if (restingStartTime != null && (isRestingState(newState) || newState === 'Playing')) {
+      // preserve existing
+    } else {
+      restingStartTime = null;
+    }
 
     const agentData = {
       id: agentId,
       sessionId: entry.sessionId,
       agentId: entry.agentId,
       slug: entry.slug,
-      displayName: this.formatDisplayName(entry.slug, entry.projectPath, agentId),
+      displayName: this.formatDisplayName(entry.slug, entry.projectPath, agentId, m('source'), entry.displayName),
       projectPath: entry.projectPath,
       jsonlPath: entry.jsonlPath || (existingAgent ? existingAgent.jsonlPath : null),
       model: m('model'),
@@ -107,11 +156,13 @@ class AgentManager extends EventEmitter {
       source: m('source'),
       agentType: m('agentType'),
       currentTool: m('currentTool'),
+      publicActivityText: m('publicActivityText'),
       lastMessage: m('lastMessage'),
       endReason: m('endReason'),
       teammateName: m('teammateName'),
       teamName: m('teamName'),
       tokenUsage: m('tokenUsage', { inputTokens: 0, outputTokens: 0, estimatedCost: 0 }),
+      contextUsage: m('contextUsage', null),
       avatarIndex: existingAgent ? existingAgent.avatarIndex : this._assignAvatarIndex(agentId),
       isSubagent: entry.isSubagent || (existingAgent ? existingAgent.isSubagent : false),
       isTeammate: entry.isTeammate || (existingAgent ? existingAgent.isTeammate : false),
@@ -122,10 +173,12 @@ class AgentManager extends EventEmitter {
       lastActivity: now,
       timestamp: entry.timestamp || now,
       firstSeen: existingAgent ? existingAgent.firstSeen : now,
-      updateCount: existingAgent ? existingAgent.updateCount + 1 : 1
+      updateCount: existingAgent ? existingAgent.updateCount + 1 : 1,
+      restingStartTime
     };
 
     this.agents.set(agentId, agentData);
+    this._removeStaleDuplicates(agentData);
 
     // Refresh parent state when subagent state changes
     if (agentData.parentId) {
@@ -173,6 +226,50 @@ class AgentManager extends EventEmitter {
     if (pending) {
       clearTimeout(pending.timer);
       this._pendingEmit.delete(agentId);
+    }
+  }
+
+  /**
+   * Remove older agents that represent the same logical session.
+   * - Same source + display name + project path
+   * - Grok Build / Antigravity default labels: one character per source
+   * - Prefer real Grok UUID sessions over debug/test hook IDs
+   */
+  _removeStaleDuplicates(keeper) {
+    const { id, source, projectPath } = keeper;
+    if (!source) return;
+
+    const resolvedKeeperName = resolveAgentDisplayName(keeper);
+    const sourceLabel = formatAgentSource(source);
+    const sourceWide = SINGLETON_SOURCE_LABELS.has(source)
+      && resolvedKeeperName === sourceLabel;
+    const keeperProject = normalizeProjectPath(projectPath);
+    const keeperIsRealGrok = source === 'grok-build' && isLikelyGrokSessionId(id);
+
+    for (const [otherId, agent] of Array.from(this.agents.entries())) {
+      if (otherId === id) continue;
+      if (agent.source !== source) continue;
+
+      if (keeperIsRealGrok && !isLikelyGrokSessionId(otherId)) {
+        this.removeAgent(otherId);
+        continue;
+      }
+
+      if (source === 'grok-build' && isLikelyGrokSessionId(otherId) && !keeperIsRealGrok) {
+        continue;
+      }
+
+      const resolvedOtherName = resolveAgentDisplayName(agent);
+      if (resolvedOtherName !== resolvedKeeperName) continue;
+
+      const sameScope = sourceWide
+        || normalizeProjectPath(agent.projectPath) === keeperProject;
+
+      if (!sameScope) continue;
+
+      if (agent.lastActivity <= keeper.lastActivity) {
+        this.removeAgent(otherId);
+      }
     }
   }
 
@@ -283,38 +380,45 @@ class AgentManager extends EventEmitter {
     const agent = this.agents.get(agentId);
     let activeAgentUpdated = false;
     if (agent) {
-      agent.displayName = this.formatDisplayName(agent.slug, agent.projectPath, agentId);
+      agent.displayName = this.formatDisplayName(agent.slug, agent.projectPath, agentId, agent.source, null);
       this.emit('agent-updated', this.getAgentWithEffectiveState(agentId));
       activeAgentUpdated = true;
     }
 
     return {
       activeAgentUpdated,
-      displayName: this.formatDisplayName(agent ? agent.slug : null, agent ? agent.projectPath : null, agentId)
+      displayName: this.formatDisplayName(
+        agent ? agent.slug : null,
+        agent ? agent.projectPath : null,
+        agentId,
+        agent ? agent.source : null,
+        null
+      )
     };
   }
 
   /**
-   * Determine display name
+   * Determine display name — unified contract for all consumers.
    * 1. ~/.pixel-agent-desk/name-map.json (session_id -> name mapping)
-   * 2. slug (e.g., "toasty-sparking-lecun" → "Toasty Sparking Lecun")
-   * 3. basename of projectPath (e.g., "pixel-agent-desk-master")
-   * 4. Fallback: "Agent"
+   * 2. Known source label (via formatAgentSource)
+   * 3. Fallback: "Spirit"
+   *
+   * Explicit exclusions: slug, project basename, session title, event displayName.
    */
-  formatDisplayName(slug, projectPath, agentId) {
+  formatDisplayName(slug, projectPath, agentId, source, displayName) {
     if (agentId) {
       const nameMap = getNameMap();
       if (nameMap[agentId]) {
         return nameMap[agentId];
       }
     }
-    if (slug) {
-      return formatSlugToDisplayName(slug);
+    if (source) {
+      const mapped = formatAgentSource(source);
+      if (mapped && mapped !== 'Unknown Agent') {
+        return mapped;
+      }
     }
-    if (projectPath) {
-      return path.basename(projectPath);
-    }
-    return 'Agent';
+    return 'Spirit';
   }
 
   /**
@@ -355,9 +459,25 @@ class AgentManager extends EventEmitter {
     }
   }
 
+  _checkPlayingStateTransitions() {
+    const now = Date.now();
+    for (const [agentId, agent] of this.agents) {
+      if (!isRestingState(agent.state)) continue;
+      if (!agent.restingStartTime) continue;
+      if (now - agent.restingStartTime < this.config.playingTransitionMs) continue;
+
+      agent.state = 'Playing';
+      agent.restingStartTime = null;
+      agent.lastActivity = now;
+
+      this._cancelPendingEmit(agentId);
+      this.emit('agent-updated', this.getAgentWithEffectiveState(agentId));
+    }
+  }
+
   getStats() {
     const agents = this.getAllAgents();
-    const counts = { Done: 0, Thinking: 0, Working: 0, Waiting: 0, Help: 0, Error: 0 };
+    const counts = { Done: 0, Thinking: 0, Working: 0, Waiting: 0, Help: 0, Error: 0, Playing: 0 };
     for (const agent of agents) {
       if (counts.hasOwnProperty(agent.state)) {
         counts[agent.state]++;
