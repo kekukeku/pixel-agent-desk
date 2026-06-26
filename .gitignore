@@ -14,6 +14,11 @@ Desktop.ini
 ehthumbs.db
 $RECYCLE.BIN/
 *.lnk
+# macOS custom folder icons (breaks git refs when copied into .git)
+Icon
+Icon?
+**/Icon
+**/Icon?
 
 # Logs
 *.log
@@ -24,6 +29,7 @@ yarn-error.log*
 # IDE
 .vscode/
 .idea/
+.opencode/
 *.swp
 *.swo
 *.sublime-*
@@ -74,3 +80,17 @@ PLANNING/draft_*.md
 PLANNING/groupchat_request_*.json
 PLANNING/dispatch_result_*.json
 
+# Internal planning/review notes (not for packaged app or source downloads)
+docs/office-agent-overhead-info*.md
+docs/readme-refresh-plan.md
+docs/playing-state-plan.md
+docs/playing-state-review-feedback.md
+docs/global-agent-office-plan.md
+docs/小人未在辦公室.txt
+
+# Local-only workspace files
+opencode.jsonc
+input.png
+agentManager.js
+start the office.command
+public/* (1).*
