@@ -67,6 +67,7 @@ function createCodexObserver(options) {
   // Codex Desktop keeps currently open workspaces in global state. This is the
   // safest signal for an idle "Codex is open here" avatar.
   const activeWorkspaceAgents = new Map();
+  const ignoredSessionFiles = new Set();
 
   function loadSessionIndex() {
     try {
@@ -179,6 +180,15 @@ function createCodexObserver(options) {
     return path.basename(path.dirname(filePath));
   }
 
+  function isInternalSubagentMeta(record) {
+    const payload = record && record.payload && typeof record.payload === 'object' ? record.payload : {};
+    const type = record && (record.type || payload.type);
+    return type === 'session_meta' && (
+      payload.thread_source === 'subagent' ||
+      (payload.source && typeof payload.source === 'object' && payload.source.subagent)
+    );
+  }
+
   function isPidAlive(pid) {
     if (!pid || typeof pid !== 'number') return false;
     try {
@@ -245,10 +255,17 @@ function createCodexObserver(options) {
       const jsonlFiles = findSessionJsonls();
 
       for (const filePath of jsonlFiles) {
+        if (ignoredSessionFiles.has(filePath)) continue;
         const fallbackSessionId = sessionIdFromFilePath(filePath);
         const records = readNewLines(filePath, fallbackSessionId);
 
         for (const record of records) {
+          if (isInternalSubagentMeta(record)) {
+            // ponytail: internal Codex approval/subagent threads are not user agents.
+            ignoredSessionFiles.add(filePath);
+            break;
+          }
+
           const sid = getSessionId(record, fallbackSessionId);
           const agentEvent = mapCodexRecordToAgentEvent(record, {
             sessionIndex,

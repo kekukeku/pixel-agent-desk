@@ -133,6 +133,34 @@ describe('codexObserver', () => {
       obs.stop();
     });
 
+    test('ignores Codex Desktop internal subagent JSONL files', () => {
+      writeNestedSession('2026/06/21/rollout-2026-06-21T22-31-00-019ee999-aaaa-7222-8333-abcdefabcdef.jsonl', [
+        JSON.stringify({
+          type: 'session_meta',
+          payload: {
+            id: '019ee999-aaaa-7222-8333-abcdefabcdef',
+            parent_thread_id: 'parent-thread',
+            cwd: '/projects/desktop-pad',
+            source: { subagent: { other: 'guardian' } },
+            thread_source: 'subagent',
+          },
+        }),
+        JSON.stringify({
+          type: 'event_msg',
+          payload: {
+            type: 'task_started',
+          },
+        }),
+      ].join('\n'));
+
+      const obs = createObs();
+      obs.start();
+
+      expect(events).toEqual([]);
+
+      obs.stop();
+    });
+
     test('active-workspace-roots emits an idle Codex workspace agent', () => {
       writeGlobalState({
         'active-workspace-roots': ['/projects/pixel-agent-desk'],

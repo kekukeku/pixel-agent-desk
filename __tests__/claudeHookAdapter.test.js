@@ -279,6 +279,16 @@ describe('claudeHookAdapter', () => {
     });
   });
 
+  describe('codex transcript guard', () => {
+    test('rejects Claude hook payloads pointing at Codex session JSONL', () => {
+      const payload = withDefaults({
+        transcript_path: '/Users/me/.codex/sessions/2026/06/28/rollout-session.jsonl'
+      });
+
+      expect(mapClaudeHookToAgentEvent(payload)).toBeNull();
+    });
+  });
+
   describe('session_id fallback', () => {
     test('uses sessionId when session_id is missing', () => {
       const payload = withDefaults({

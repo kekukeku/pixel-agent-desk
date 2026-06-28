@@ -66,7 +66,8 @@ The app is an observer and visualization layer. It does not dispatch work, assig
 2. **Launch the Dashboard**: Double-click [`Start.command`](Start.command).
    - Uses the same Node.js (`~/.local/node` or an existing system Node 20+).
    - Opens the dashboard window via `npm start`.
-   - *Gatekeeper Note: If macOS blocks execution, right-click the `.command` file and select **Open**, or run `chmod +x Install.command Start.command` in Terminal.*
+   - *Permission Note: If macOS says `Install.command` or `Start.command` cannot be opened, run `chmod +x Install.command Start.command` in this folder using Terminal.*
+   - *Gatekeeper Note: If macOS blocks execution, right-click the `.command` file and select **Open**.*
 
 ### All Platforms — Source Startup
 

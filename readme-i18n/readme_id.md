@@ -64,7 +64,8 @@ Aplikasi ini merupakan lapisan pengamat dan visualisasi. Ia tidak mengirimkan pe
 2. **Luncurkan Dasbor**: Klik dua kali [`Start.command`](Start.command).
    - Menggunakan Node.js yang sama (`~/.local/node` atau Node 20+ sistem yang ada).
    - Membuka jendela dasbor melalui `npm start`.
-   - *Catatan Gatekeeper: Jika macOS memblokir eksekusi, klik kanan berkas `.command` dan pilih **Buka**, atau jalankan `chmod +x Install.command Start.command` di Terminal.*
+   - *Catatan izin: Jika macOS mengatakan `Install.command` atau `Start.command` tidak dapat dibuka, jalankan `chmod +x Install.command Start.command` di folder ini menggunakan Terminal.*
+   - *Catatan Gatekeeper: Jika macOS memblokir eksekusi, klik kanan berkas `.command` dan pilih **Buka**.*
 
 ### Semua Platform — Startup dari Sumber
 

@@ -64,7 +64,8 @@ L'application est une couche d'observation et de visualisation. Elle ne dispatch
 2. **Lancer le Tableau de Bord** : Double-cliquez sur [`Start.command`](Start.command).
    - Utilise le même Node.js (`~/.local/node` ou un Node 20+ système existant).
    - Ouvre la fenêtre du tableau de bord via `npm start`.
-   - *Note Gatekeeper : Si macOS bloque l'exécution, faites un clic droit sur le fichier `.command` et sélectionnez **Ouvrir**, ou exécutez `chmod +x Install.command Start.command` dans le Terminal.*
+   - *Note d'autorisations : Si macOS indique que `Install.command` ou `Start.command` ne peut pas être ouvert, exécutez `chmod +x Install.command Start.command` dans ce dossier avec le Terminal.*
+   - *Note Gatekeeper : Si macOS bloque l'exécution, faites un clic droit sur le fichier `.command` et sélectionnez **Ouvrir**.*
 
 ### Toutes les Plateformes — Démarrage depuis les Sources
 

@@ -5,7 +5,15 @@
 
 'use strict';
 
+function hasCodexSessionPath(claudePayload) {
+  const transcriptPath = claudePayload.transcript_path || claudePayload.agent_transcript_path || '';
+  return /(^|[/\\])\.codex[/\\]sessions[/\\]/.test(String(transcriptPath));
+}
+
 function mapClaudeHookToAgentEvent(claudePayload) {
+  // ponytail: Claude hooks must not claim Codex session files as Claude agents.
+  if (hasCodexSessionPath(claudePayload)) return null;
+
   const eventName = claudePayload.hook_event_name;
   let normalizedEvent = null;
 
@@ -180,4 +188,4 @@ function mapClaudeHookToAgentEvent(claudePayload) {
   return normalizedEvent;
 }
 
-module.exports = { mapClaudeHookToAgentEvent };
+module.exports = { mapClaudeHookToAgentEvent, hasCodexSessionPath };

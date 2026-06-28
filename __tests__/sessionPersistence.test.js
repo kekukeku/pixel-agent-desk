@@ -193,6 +193,27 @@ describe('sessionPersistence', () => {
       expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Skipped stale/non-allowlisted agent: agent-wr'));
     });
 
+    test('skips claude-code agents persisted with Codex session JSONL paths', () => {
+      const savedState = {
+        agents: [{
+          id: 'codex-as-claude',
+          state: 'Playing',
+          source: 'claude-code',
+          jsonlPath: '/Users/me/.codex/sessions/2026/06/28/rollout-session.jsonl',
+        }],
+        pids: [['codex-as-claude', process.pid]],
+      };
+
+      mockPersistedState(savedState);
+      execFileSync.mockReturnValue('/usr/bin/node /usr/local/bin/claude');
+
+      recoverExistingSessions({ agentManager, sessionPids, firstPreToolUseDone, debugLog, errorHandler });
+
+      expect(agentManager.updateAgent).not.toHaveBeenCalled();
+      expect(sessionPids.has('codex-as-claude')).toBe(false);
+      expect(debugLog).toHaveBeenCalledWith(expect.stringContaining('Skipped stale/non-allowlisted agent: codex-as'));
+    });
+
     test('recovers allowlisted custom watcher agents without PID', () => {
       const savedState = {
         agents: [{ id: 'GA', displayName: 'A', state: 'Waiting', source: 'custom-watcher' }],

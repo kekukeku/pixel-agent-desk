@@ -71,6 +71,8 @@ function getCustomWatcherAllowlist() {
 function shouldRecoverAgent(agent, pid, watcherAllowlist) {
   const source = agent.source || '';
   if (source === 'claude-code' || (!source && pid)) {
+    // ponytail: a Codex JSONL path is never a valid Claude recovery candidate.
+    if (/(^|[/\\])\.codex[/\\]sessions[/\\]/.test(String(agent.jsonlPath || ''))) return false;
     return pid ? isClaudeProcess(pid) : false;
   }
 

@@ -64,7 +64,8 @@ La aplicación es una capa de observación y visualización. No despacha trabajo
 2. **Iniciar el Panel de Control**: Haz doble clic en [`Start.command`](Start.command).
    - Usa el mismo Node.js (`~/.local/node` o un Node 20+ del sistema existente).
    - Abre la ventana del panel de control a través de `npm start`.
-   - *Nota de Gatekeeper: Si macOS bloquea la ejecución, haz clic derecho en el archivo `.command` y selecciona **Abrir**, o ejecuta `chmod +x Install.command Start.command` en Terminal.*
+   - *Nota de permisos: Si macOS dice que `Install.command` o `Start.command` no se puede abrir, ejecuta `chmod +x Install.command Start.command` en esta carpeta usando Terminal.*
+   - *Nota de Gatekeeper: Si macOS bloquea la ejecución, haz clic derecho en el archivo `.command` y selecciona **Abrir**.*
 
 ### Todas las Plataformas — Inicio desde Código Fuente
 
